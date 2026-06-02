@@ -52,7 +52,7 @@ NATURAL_NAMES = ("funbox", "盒子", "小盒", "小盒子", "趣味盒")
     "chuiguo+codex",
     "安全轻量的群聊趣味工具箱：人格化自然回复、群友小档案、群聊日报、空间锐评",
     "0.7.1",
-    "local",
+    "https://github.com/Chuiguo/astrbot_plugin_funbox",
 )
 class FunBoxPlugin(Star):
     def __init__(self, context: Context, config=None):

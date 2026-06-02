@@ -16,4 +16,4 @@ help: |
   也可以直接叫 bot 昵称：群里现在什么氛围？
 version: v0.7.1
 author: chuiguo+codex
-repo: local
+repo: https://github.com/Chuiguo/astrbot_plugin_funbox
