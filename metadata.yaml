@@ -25,6 +25,6 @@ help: |
   /群聊日报
   /空间侦探 [说说内容]
   也可以直接叫 bot 昵称：群里现在什么氛围？
-version: v1.0.1
+version: v1.0.2
 author: chuiguo+codex
 repo: https://github.com/Chuiguo/astrbot_plugin_funbox

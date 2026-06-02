@@ -137,7 +137,7 @@ PLAY_EXAMPLES = (
     "astrbot_plugin_funbox",
     "chuiguo+codex",
     "安全轻量的群聊趣味工具箱：人格化自然回复、玩法导航、群聊天气、隐私控制",
-    "1.0.1",
+    "1.0.2",
     "https://github.com/Chuiguo/astrbot_plugin_funbox",
 )
 class FunBoxPlugin(Star):
@@ -162,6 +162,15 @@ class FunBoxPlugin(Star):
             minimum=0,
         )
         self.enable_profiles = self._config_bool("enable_profiles", True)
+        self.enable_group_weather = self._config_bool("enable_group_weather", True)
+        self.weather_use_llm = self._config_bool("weather_use_llm", True)
+        self.enable_leaderboard = self._config_bool("enable_leaderboard", True)
+        self.leaderboard_min_samples = self._config_int(
+            "leaderboard_min_samples",
+            1,
+            minimum=1,
+        )
+        self.enable_space_detective = self._config_bool("enable_space_detective", True)
         self.enable_auto_daily = self._config_bool("enable_auto_daily", False)
         self.daily_report_hour = min(
             23,
@@ -698,13 +707,16 @@ class FunBoxPlugin(Star):
         persona_prompt = await self._current_persona_prompt(event)
 
         lines = ["FunBox 自检："]
-        lines.append(f"插件版本：1.0.1")
+        lines.append(f"插件版本：1.0.2")
         lines.append(f"LLM provider：{'已读取' if provider else '未读取到，LLM 玩法会走模板兜底'}")
         lines.append(f"AstrBot 人格：{'已读取' if persona_prompt else '未读取到，使用 persona_style 配置'}")
         lines.append(f"最近消息样本：{recent_count}/{self.max_cache_messages}")
         lines.append(f"群友小档案样本：{profile_count} 个")
         lines.append(f"自然回复：{'开启' if self.enable_natural_reply else '关闭'}")
         lines.append(f"只在叫到 bot 时回复：{'是' if self.only_when_addressed else '否'}")
+        lines.append(f"群聊天气：{'开启' if self.enable_group_weather else '关闭'}")
+        lines.append(f"群聊榜单：{'开启' if self.enable_leaderboard else '关闭'}，最低样本 {self.leaderboard_min_samples}")
+        lines.append(f"空间侦探：{'开启' if self.enable_space_detective else '关闭'}")
         lines.append(f"自动日报：{'开启' if self.enable_auto_daily else '关闭'}")
 
         suggestions = []
@@ -716,6 +728,8 @@ class FunBoxPlugin(Star):
             suggestions.append("自然回复较主动：如果怕插嘴，建议开启 only_when_addressed。")
         if self.enable_auto_daily:
             suggestions.append("自动日报已开启：它会在到点后群里首次发言时触发，每会话每天一次。")
+        if self.enable_group_weather and not self.weather_use_llm:
+            suggestions.append("群聊天气已设置为规则模板模式：更省 token，但没那么会整活。")
 
         if suggestions:
             lines.append("")
@@ -744,6 +758,9 @@ class FunBoxPlugin(Star):
             f"群友小档案：{profile_count} 个临时样本\n"
             f"LLM 生成：{llm_mode}\n"
             f"自然回复：{addressed_mode}，冷却 {self.natural_cooldown_seconds}s\n"
+            f"群聊天气：{'开启' if self.enable_group_weather else '关闭'}，LLM润色 {'开启' if self.weather_use_llm else '关闭'}\n"
+            f"群聊榜单：{'开启' if self.enable_leaderboard else '关闭'}，最低样本 {self.leaderboard_min_samples}\n"
+            f"空间侦探：{'开启' if self.enable_space_detective else '关闭'}\n"
             f"自动日报：{auto_daily}\n"
             "隐私：所有样本只存在内存里，可用 /funbox清缓存 或 /funbox忘记我"
         )
@@ -781,6 +798,9 @@ class FunBoxPlugin(Star):
         return removed, had_profile
 
     def _leaderboard_text(self, event: AstrMessageEvent, kind: str = "") -> str:
+        if not self.enable_leaderboard:
+            return "群聊榜单已在 FunBox 配置里关闭。"
+
         session_key = self._session_key(event)
         profiles = self.profiles[session_key]
         if not profiles:
@@ -831,9 +851,16 @@ class FunBoxPlugin(Star):
             key=lambda item: item[2],
             reverse=True,
         )
-        ranked = [item for item in ranked if item[2] > 0][:5]
+        ranked = [
+            item
+            for item in ranked
+            if item[2] > 0 and int(item[1].get("message_count", 0)) >= self.leaderboard_min_samples
+        ][:5]
         if not ranked:
-            return "群聊榜单暂时没有有效读数。大家聊得太像正常人了，我有点不适应。"
+            return (
+                "群聊榜单暂时没有有效读数。\n"
+                f"当前最低样本要求：每人 {self.leaderboard_min_samples} 条。"
+            )
 
         medals = ("1.", "2.", "3.", "4.", "5.")
         lines = [f"{title}："]
@@ -913,6 +940,9 @@ class FunBoxPlugin(Star):
         }
 
     async def _weather_text(self, event: AstrMessageEvent) -> str:
+        if not self.enable_group_weather:
+            return "群聊天气已在 FunBox 配置里关闭。"
+
         reading = self._weather_reading(event)
         fallback = (
             f"群聊天气：{reading['weather']}\n"
@@ -921,6 +951,9 @@ class FunBoxPlugin(Star):
             f"预警：{reading['warning']}\n"
             f"建议：{reading['advice']}"
         )
+        if not self.weather_use_llm:
+            return fallback
+
         return await self._generate_with_context(
             event,
             task=(
@@ -1215,6 +1248,8 @@ class FunBoxPlugin(Star):
             reply = self._leaderboard_text(event, text)
         elif intent == "weather":
             reply = await self._weather_text(event)
+        elif intent == "qzone" and not self.enable_space_detective:
+            reply = "空间侦探已在 FunBox 配置里关闭。"
         elif intent == "clear_cache":
             recent_count, profile_count = self._clear_session_cache(event)
             reply = f"已清理当前会话 FunBox 缓存：消息 {recent_count} 条，小档案 {profile_count} 个。"
@@ -1601,6 +1636,11 @@ class FunBoxPlugin(Star):
 
     @filter.command("空间侦探", alias={"说说锐评", "空间锐评"})
     async def space_detective(self, event: AstrMessageEvent):
+        if not self.enable_space_detective:
+            yield event.plain_result("空间侦探已在 FunBox 配置里关闭。")
+            event.stop_event()
+            return
+
         text = self._command_arg(event)
         source = "用户提供的说说内容"
         if not text:

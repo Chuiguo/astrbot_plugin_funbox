@@ -2,7 +2,9 @@
 
 安全轻量的群聊趣味工具箱。它会缓存最近群聊上下文，并优先使用 AstrBot 当前 LLM provider 生成趣味回复；LLM 不可用时自动退回规则模板。
 
-v1.0.1 加入 `/funbox自检` 和 `/funbox示例`，方便装完以后快速检查配置、复制命令测试。
+v1.0.2 加入更多插件配置项：群聊天气、榜单、空间侦探都可以单独开关，群聊天气也可以关闭 LLM 润色来节省 token。
+
+v1.0.1 起，FunBox 加入 `/funbox自检` 和 `/funbox示例`，方便装完以后快速检查配置、复制命令测试。
 
 v1.0.0 起，FunBox 加入 `/群聊天气`：把最近群聊气氛报成赛博天气预报，更适合作为群里随手一玩的入口。
 
@@ -92,6 +94,11 @@ FunBox 也会尽量读取 AstrBot 当前会话人格，并把配置里的人格/
 - `persona_style`: FunBox 人格/口吻，会注入所有 LLM 生成。
 - `natural_cooldown_seconds`: 未直接叫 bot 名字时的自然回复冷却秒数，默认 180。
 - `enable_profiles`: 是否启用群友小档案，默认开启，只基于内存样本。
+- `enable_group_weather`: 是否启用群聊天气，默认开启。
+- `weather_use_llm`: 群聊天气是否使用 LLM 润色，默认开启；关闭后更省 token。
+- `enable_leaderboard`: 是否启用群聊榜单，默认开启。
+- `leaderboard_min_samples`: 榜单最低样本数，默认 1；调高可减少偶然上榜。
+- `enable_space_detective`: 是否启用空间侦探，默认开启。
 - `enable_auto_daily`: 是否启用自动群聊日报，默认关闭。
 - `daily_report_hour`: 自动日报小时，默认 23 点。
 

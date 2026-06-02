@@ -47,6 +47,36 @@
     "hint": "只基于内存里的最近群聊样本做轻量画像，不落库。",
     "default": true
   },
+  "enable_group_weather": {
+    "description": "启用群聊天气",
+    "type": "bool",
+    "hint": "关闭后 /群聊天气 和相关自然语言触发会提示已关闭。",
+    "default": true
+  },
+  "weather_use_llm": {
+    "description": "群聊天气使用 LLM 润色",
+    "type": "bool",
+    "hint": "开启后群聊天气会结合上下文生成更有梗的预报；关闭后只使用规则模板，更省 token。",
+    "default": true
+  },
+  "enable_leaderboard": {
+    "description": "启用群聊榜单",
+    "type": "bool",
+    "hint": "关闭后 /群聊榜单、/抽象王、/梗王、/问号王 会提示已关闭。",
+    "default": true
+  },
+  "leaderboard_min_samples": {
+    "description": "榜单最低样本数",
+    "type": "int",
+    "hint": "每个群友至少缓存多少条消息才参与榜单，默认 1。调高可减少偶然上榜。",
+    "default": 1
+  },
+  "enable_space_detective": {
+    "description": "启用空间侦探",
+    "type": "bool",
+    "hint": "关闭后 /空间侦探、/说说锐评、/空间锐评 会提示已关闭。",
+    "default": true
+  },
   "enable_auto_daily": {
     "description": "启用自动群聊日报",
     "type": "bool",
