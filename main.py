@@ -23,6 +23,19 @@ COMMAND_WORDS = {
     "推荐玩法",
     "随机玩法",
     "抽玩法",
+    "funbox状态",
+    "趣味状态",
+    "盒子状态",
+    "funbox清缓存",
+    "趣味清缓存",
+    "盒子清缓存",
+    "funbox忘记我",
+    "趣味忘记我",
+    "盒子忘记我",
+    "群聊榜单",
+    "抽象王",
+    "梗王",
+    "问号王",
     "今日人设",
     "人设",
     "今日人格",
@@ -69,6 +82,7 @@ MENU_CATEGORIES = {
     "群聊": (
         ("群聊热词", "统计最近反复出现的关键词。"),
         ("群聊日报", "总结最近热词、名场面和气质。"),
+        ("群聊榜单", "抽象王、梗王、问号王轻量排行。"),
         ("氛围雷达", "用读数吐槽群聊空气。"),
     ),
     "空间": (
@@ -77,6 +91,11 @@ MENU_CATEGORIES = {
     "不知道玩啥": (
         ("玩点啥", "按上下文推荐一个玩法。"),
         ("随机玩法", "随机抽一个玩法并给示例。"),
+    ),
+    "维护": (
+        ("funbox状态", "查看当前会话缓存和配置状态。"),
+        ("funbox清缓存", "清掉当前群聊 FunBox 内存样本。"),
+        ("funbox忘记我", "删除当前用户在 FunBox 里的最近样本。"),
     ),
 }
 
@@ -90,6 +109,7 @@ PLAY_EXAMPLES = (
     ("抽象指数", "/抽象指数 我是不是有点离谱", "适合给一句话测抽象读数。"),
     ("群聊热词", "/群聊热词", "最近大家反复念叨同一件事时用它。"),
     ("群聊日报", "/群聊日报", "群里聊了一阵后，用它收个尾。"),
+    ("群聊榜单", "/群聊榜单", "样本多了以后可以看看今天谁最有节目效果。"),
     ("空间侦探", "/空间侦探 今天又被生活创飞了", "想锐评说说/空间文案时用它。"),
 )
 
@@ -97,8 +117,8 @@ PLAY_EXAMPLES = (
 @register(
     "astrbot_plugin_funbox",
     "chuiguo+codex",
-    "安全轻量的群聊趣味工具箱：人格化自然回复、玩法导航、群友小档案、群聊日报",
-    "0.8.0",
+    "安全轻量的群聊趣味工具箱：人格化自然回复、玩法导航、群聊榜单、隐私控制",
+    "0.9.0",
     "https://github.com/Chuiguo/astrbot_plugin_funbox",
 )
 class FunBoxPlugin(Star):
@@ -422,6 +442,10 @@ class FunBoxPlugin(Star):
     def _detect_intent(self, text: str) -> str | None:
         lowered = text.lower()
         checks = (
+            ("status", ("funbox状态", "趣味状态", "盒子状态", "状态怎么样", "缓存多少")),
+            ("clear_cache", ("funbox清缓存", "趣味清缓存", "盒子清缓存", "清缓存", "清掉缓存", "清空样本")),
+            ("forget_me", ("funbox忘记我", "趣味忘记我", "盒子忘记我", "忘记我", "删掉我的样本")),
+            ("leaderboard", ("群聊榜单", "排行榜", "抽象王", "梗王", "问号王", "今日榜单")),
             ("recommend", ("来点好玩的", "玩点啥", "帮我选", "推荐玩法", "推荐一个", "现在玩啥")),
             ("random_play", ("随机玩法", "抽玩法", "随机一个", "随便来一个", "交给命运")),
             ("menu", ("菜单", "玩法列表", "有哪些玩法", "功能列表")),
@@ -475,6 +499,10 @@ class FunBoxPlugin(Star):
                 "FunBox 可用玩法：今日人设、赛博塔罗、氛围雷达、名场面、"
                 "今日运势、抽象指数、群聊热词。你也可以直接叫我的昵称，例如：群里现在啥氛围？"
             ),
+            "status": "FunBox 状态可以用 /funbox状态 查看。",
+            "clear_cache": "要清当前会话缓存，请发送 /funbox清缓存。",
+            "forget_me": "要删除你的最近样本，请发送 /funbox忘记我。",
+            "leaderboard": "群聊榜单还没有样本。先让群友聊几句，我再开始颁奖。",
             "menu": self._menu_text(),
             "recommend": "我建议现在玩：/赛博塔罗\n原因：样本还少，先抽一张赛博玄学不冷场。",
             "random_play": "随机玩法：/氛围雷达\n直接发它，我来一本正经地扫一下群聊空气。",
@@ -497,6 +525,10 @@ class FunBoxPlugin(Star):
                 "用户在问 FunBox 怎么玩。请用自然聊天方式介绍玩法，告诉用户可以直接说话，"
                 "例如“盒子，群里现在啥氛围”。"
             ),
+            "status": "用户想查看 FunBox 当前状态。请提醒可用 /funbox状态。",
+            "clear_cache": "用户想清理 FunBox 缓存。请提醒可用 /funbox清缓存。",
+            "forget_me": "用户想删除自己的 FunBox 样本。请提醒可用 /funbox忘记我。",
+            "leaderboard": "用户想看群聊榜单。请说明可用 /群聊榜单、/群聊榜单 抽象、/群聊榜单 梗王、/群聊榜单 问号。",
             "menu": "用户想看 FunBox 菜单。请按常用、个人、群聊、空间、不知道玩啥分组，短短介绍玩法。",
             "recommend": "用户想让你推荐一个当前最适合玩的 FunBox 玩法。请基于上下文只推荐 1 个玩法并说明原因。",
             "random_play": "用户想随机抽一个 FunBox 玩法。请给出玩法名、可直接发送的命令和一句理由。",
@@ -537,6 +569,10 @@ class FunBoxPlugin(Star):
             "随机": "不知道玩啥",
             "推荐": "不知道玩啥",
             "玩啥": "不知道玩啥",
+            "维护": "维护",
+            "安全": "维护",
+            "隐私": "维护",
+            "管理": "维护",
         }
         key = aliases.get(normalized, raw)
 
@@ -562,7 +598,7 @@ class FunBoxPlugin(Star):
             (
                 "",
                 "记不住就用：/玩点啥 或 /随机玩法",
-                "细看分类：/趣味帮助 常用、/趣味帮助 个人、/趣味帮助 群聊、/趣味帮助 空间",
+                "细看分类：/趣味帮助 常用、/趣味帮助 个人、/趣味帮助 群聊、/趣味帮助 空间、/趣味帮助 维护",
             )
         )
         return "\n".join(lines)
@@ -608,6 +644,120 @@ class FunBoxPlugin(Star):
             f"直接发：{example}\n"
             f"为什么它有戏：{reason}"
         )
+
+    def _status_text(self, event: AstrMessageEvent) -> str:
+        session_key = self._session_key(event)
+        recent_count = len(self.recent[session_key])
+        profile_count = len(self.profiles[session_key])
+        addressed_mode = "只在叫到 bot 时自然回复" if self.only_when_addressed else "明显趣味请求也会自然回复"
+        llm_mode = "开启" if self.enable_llm else "关闭，使用模板兜底"
+        auto_daily = (
+            f"开启，{self.daily_report_hour} 点后每日一次"
+            if self.enable_auto_daily
+            else "关闭"
+        )
+        return (
+            "FunBox 状态：\n"
+            f"最近消息样本：{recent_count}/{self.max_cache_messages}\n"
+            f"群友小档案：{profile_count} 个临时样本\n"
+            f"LLM 生成：{llm_mode}\n"
+            f"自然回复：{addressed_mode}，冷却 {self.natural_cooldown_seconds}s\n"
+            f"自动日报：{auto_daily}\n"
+            "隐私：所有样本只存在内存里，可用 /funbox清缓存 或 /funbox忘记我"
+        )
+
+    def _clear_session_cache(self, event: AstrMessageEvent) -> tuple[int, int]:
+        session_key = self._session_key(event)
+        recent_count = len(self.recent[session_key])
+        profile_count = len(self.profiles[session_key])
+        self.recent[session_key].clear()
+        self.profiles[session_key].clear()
+        self.natural_last_reply_at.pop(session_key, None)
+        self.daily_report_sent.pop(session_key, None)
+        return recent_count, profile_count
+
+    def _forget_sender(self, event: AstrMessageEvent) -> tuple[int, bool]:
+        session_key = self._session_key(event)
+        sender_id = self._sender_id(event)
+        items = self.recent[session_key]
+        kept = [item for item in items if item.get("sender_id") != sender_id]
+        removed = len(items) - len(kept)
+        items.clear()
+        items.extend(kept)
+        had_profile = sender_id in self.profiles[session_key]
+        self.profiles[session_key].pop(sender_id, None)
+        return removed, had_profile
+
+    def _leaderboard_text(self, event: AstrMessageEvent, kind: str = "") -> str:
+        session_key = self._session_key(event)
+        profiles = self.profiles[session_key]
+        if not profiles:
+            return "群聊榜单还没有样本。先让群友聊几句，我再开始颁奖。"
+
+        raw = (kind or "").strip()
+        normalized = raw.lower()
+        if not normalized or normalized in {"榜单", "排行", "排行榜", "群聊榜单"}:
+            normalized = "综合"
+
+        if any(word in normalized for word in ("抽象", "发疯")):
+            title = "今日抽象王"
+            key_name = "抽象峰值"
+
+            def score(profile: dict) -> int:
+                return int(profile.get("abstract_peak", 0))
+
+        elif any(word in normalized for word in ("梗", "笑", "乐")):
+            title = "今日梗王"
+            key_name = "笑点读数"
+
+            def score(profile: dict) -> int:
+                return int(profile.get("laugh_count", 0))
+
+        elif any(word in normalized for word in ("问号", "问题")):
+            title = "今日问号王"
+            key_name = "问号读数"
+
+            def score(profile: dict) -> int:
+                return int(profile.get("question_count", 0))
+
+        else:
+            title = "群聊综合榜"
+            key_name = "节目效果"
+
+            def score(profile: dict) -> int:
+                count = int(profile.get("message_count", 0))
+                return (
+                    int(profile.get("abstract_peak", 0))
+                    + int(profile.get("laugh_count", 0)) * 12
+                    + int(profile.get("question_count", 0)) * 6
+                    + int(profile.get("long_count", 0)) * 5
+                    + min(count, 30)
+                )
+
+        ranked = sorted(
+            ((sender_id, profile, score(profile)) for sender_id, profile in profiles.items()),
+            key=lambda item: item[2],
+            reverse=True,
+        )
+        ranked = [item for item in ranked if item[2] > 0][:5]
+        if not ranked:
+            return "群聊榜单暂时没有有效读数。大家聊得太像正常人了，我有点不适应。"
+
+        medals = ("1.", "2.", "3.", "4.", "5.")
+        lines = [f"{title}："]
+        for index, (_, profile, value) in enumerate(ranked):
+            name = profile.get("last_name", "某位群友")
+            count = int(profile.get("message_count", 0))
+            lines.append(f"{medals[index]} {name}：{key_name} {value}，样本 {count} 条")
+
+        lines.extend(
+            (
+                "",
+                "说明：只基于 FunBox 内存里的最近聊天样本，纯节目效果，不代表真实人格。",
+                "想清数据：/funbox清缓存；只删自己：/funbox忘记我",
+            )
+        )
+        return "\n".join(lines)
 
     def _update_profile(self, event: AstrMessageEvent, text: str) -> None:
         if not self.enable_profiles or not text:
@@ -876,6 +1026,17 @@ class FunBoxPlugin(Star):
             reply = self._recommend_text(event)
         elif intent == "random_play":
             reply = self._random_play_text(event)
+        elif intent == "status":
+            reply = self._status_text(event)
+        elif intent == "leaderboard":
+            reply = self._leaderboard_text(event, text)
+        elif intent == "clear_cache":
+            recent_count, profile_count = self._clear_session_cache(event)
+            reply = f"已清理当前会话 FunBox 缓存：消息 {recent_count} 条，小档案 {profile_count} 个。"
+        elif intent == "forget_me":
+            removed, had_profile = self._forget_sender(event)
+            profile_text = "已删除" if had_profile else "原本就没有"
+            reply = f"我已经忘记你在当前会话里的最近样本：消息 {removed} 条，小档案{profile_text}。"
         else:
             reply = await self._generate_with_context(
                 event,
@@ -905,6 +1066,35 @@ class FunBoxPlugin(Star):
     @filter.command("随机玩法", alias={"抽玩法", "随机"})
     async def random_play(self, event: AstrMessageEvent):
         yield event.plain_result(self._random_play_text(event))
+        event.stop_event()
+
+    @filter.command("funbox状态", alias={"趣味状态", "盒子状态"})
+    async def funbox_status(self, event: AstrMessageEvent):
+        yield event.plain_result(self._status_text(event))
+        event.stop_event()
+
+    @filter.command("funbox清缓存", alias={"趣味清缓存", "盒子清缓存"})
+    async def funbox_clear_cache(self, event: AstrMessageEvent):
+        recent_count, profile_count = self._clear_session_cache(event)
+        yield event.plain_result(
+            f"已清理当前会话 FunBox 缓存：消息 {recent_count} 条，小档案 {profile_count} 个。"
+        )
+        event.stop_event()
+
+    @filter.command("funbox忘记我", alias={"趣味忘记我", "盒子忘记我"})
+    async def funbox_forget_me(self, event: AstrMessageEvent):
+        removed, had_profile = self._forget_sender(event)
+        profile_text = "已删除" if had_profile else "原本就没有"
+        yield event.plain_result(
+            f"我已经忘记你在当前会话里的最近样本：消息 {removed} 条，小档案{profile_text}。"
+        )
+        event.stop_event()
+
+    @filter.command("群聊榜单", alias={"抽象王", "梗王", "问号王"})
+    async def group_leaderboard(self, event: AstrMessageEvent):
+        command = self._message_text(event).strip().split(maxsplit=1)[0].lstrip("/")
+        arg = self._command_arg(event) or command
+        yield event.plain_result(self._leaderboard_text(event, arg))
         event.stop_event()
 
     @filter.command("今日人设", alias={"人设", "今日人格"})
