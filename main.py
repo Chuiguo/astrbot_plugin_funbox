@@ -14,7 +14,15 @@ from astrbot.api.star import Context, Star, register
 
 COMMAND_WORDS = {
     "趣味帮助",
+    "趣味菜单",
+    "菜单",
+    "玩法",
     "funbox",
+    "玩点啥",
+    "来点好玩的",
+    "推荐玩法",
+    "随机玩法",
+    "抽玩法",
     "今日人设",
     "人设",
     "今日人格",
@@ -46,12 +54,51 @@ COMMAND_WORDS = {
 
 NATURAL_NAMES = ("funbox", "盒子", "小盒", "小盒子", "趣味盒")
 
+MENU_CATEGORIES = {
+    "常用": (
+        ("氛围雷达", "看最近群聊气氛。"),
+        ("名场面", "捞一句最近最有节目效果的话。"),
+        ("今日人设", "生成 bot 今日轻人设。"),
+        ("赛博塔罗", "抽一张赛博运势卡。"),
+    ),
+    "个人": (
+        ("群友小档案", "根据最近发言生成轻量聊天画像。"),
+        ("今日运势", "抽今天的轻量运势。"),
+        ("抽象指数", "测一句话或本人近期发言的抽象程度。"),
+    ),
+    "群聊": (
+        ("群聊热词", "统计最近反复出现的关键词。"),
+        ("群聊日报", "总结最近热词、名场面和气质。"),
+        ("氛围雷达", "用读数吐槽群聊空气。"),
+    ),
+    "空间": (
+        ("空间侦探", "分析说说/空间动态，安全锐评。"),
+    ),
+    "不知道玩啥": (
+        ("玩点啥", "按上下文推荐一个玩法。"),
+        ("随机玩法", "随机抽一个玩法并给示例。"),
+    ),
+}
+
+PLAY_EXAMPLES = (
+    ("氛围雷达", "/氛围雷达", "最近聊天有点空气流动，适合扫一下气氛。"),
+    ("名场面", "/名场面", "群里有梗味时用它，能捞节目效果。"),
+    ("今日人设", "/今日人设", "想让 bot 先定个今日人格就用它。"),
+    ("赛博塔罗", "/赛博塔罗", "样本不够或想来点玄学时很好用。"),
+    ("群友小档案", "/群友小档案", "想看自己最近聊天画像时用它。"),
+    ("今日运势", "/今日运势", "适合每天先整点轻量玄学。"),
+    ("抽象指数", "/抽象指数 我是不是有点离谱", "适合给一句话测抽象读数。"),
+    ("群聊热词", "/群聊热词", "最近大家反复念叨同一件事时用它。"),
+    ("群聊日报", "/群聊日报", "群里聊了一阵后，用它收个尾。"),
+    ("空间侦探", "/空间侦探 今天又被生活创飞了", "想锐评说说/空间文案时用它。"),
+)
+
 
 @register(
     "astrbot_plugin_funbox",
     "chuiguo+codex",
-    "安全轻量的群聊趣味工具箱：人格化自然回复、群友小档案、群聊日报、空间锐评",
-    "0.7.1",
+    "安全轻量的群聊趣味工具箱：人格化自然回复、玩法导航、群友小档案、群聊日报",
+    "0.8.0",
     "https://github.com/Chuiguo/astrbot_plugin_funbox",
 )
 class FunBoxPlugin(Star):
@@ -375,6 +422,9 @@ class FunBoxPlugin(Star):
     def _detect_intent(self, text: str) -> str | None:
         lowered = text.lower()
         checks = (
+            ("recommend", ("来点好玩的", "玩点啥", "帮我选", "推荐玩法", "推荐一个", "现在玩啥")),
+            ("random_play", ("随机玩法", "抽玩法", "随机一个", "随便来一个", "交给命运")),
+            ("menu", ("菜单", "玩法列表", "有哪些玩法", "功能列表")),
             ("help", ("帮助", "怎么用", "你会什么", "funbox")),
             ("profile", ("小档案", "群友档案", "群友画像", "我的档案", "给我建档")),
             ("daily_report", ("日报", "今日总结", "今天群里", "群聊总结")),
@@ -425,6 +475,9 @@ class FunBoxPlugin(Star):
                 "FunBox 可用玩法：今日人设、赛博塔罗、氛围雷达、名场面、"
                 "今日运势、抽象指数、群聊热词。你也可以直接叫我的昵称，例如：群里现在啥氛围？"
             ),
+            "menu": self._menu_text(),
+            "recommend": "我建议现在玩：/赛博塔罗\n原因：样本还少，先抽一张赛博玄学不冷场。",
+            "random_play": "随机玩法：/氛围雷达\n直接发它，我来一本正经地扫一下群聊空气。",
             "hot_words": "我还没攒够上下文，等群里再聊几句我就能抓热词。",
             "scene": "名场面仓库还没攒起来，先让群友发点能入史的。",
             "vibe": "氛围雷达正在预热。再聊几句，我就能开始一本正经地胡说八道。",
@@ -444,6 +497,9 @@ class FunBoxPlugin(Star):
                 "用户在问 FunBox 怎么玩。请用自然聊天方式介绍玩法，告诉用户可以直接说话，"
                 "例如“盒子，群里现在啥氛围”。"
             ),
+            "menu": "用户想看 FunBox 菜单。请按常用、个人、群聊、空间、不知道玩啥分组，短短介绍玩法。",
+            "recommend": "用户想让你推荐一个当前最适合玩的 FunBox 玩法。请基于上下文只推荐 1 个玩法并说明原因。",
+            "random_play": "用户想随机抽一个 FunBox 玩法。请给出玩法名、可直接发送的命令和一句理由。",
             "hot_words": "用户想知道最近群聊热词。请基于上下文列出 3~6 个热词，并给一句好笑结论。",
             "scene": "用户想找最近群聊名场面。请从上下文挑一句最有节目效果的话，并给一句短评。",
             "vibe": "用户想知道群聊氛围。请基于上下文生成氛围雷达，包含类型、读数、结论。",
@@ -457,6 +513,101 @@ class FunBoxPlugin(Star):
         }
         base = task_map.get(intent) or "用户正在自然地和你说话。请像 FunBox 一样接住这句话，短而好笑地回复。"
         return f"用户原话：{text}\n{base}"
+
+    def _menu_text(self, category: str = "") -> str:
+        raw = (category or "").strip()
+        normalized = raw.lower()
+        aliases = {
+            "": "",
+            "help": "",
+            "帮助": "",
+            "菜单": "",
+            "玩法": "",
+            "常用": "常用",
+            "基础": "常用",
+            "个人": "个人",
+            "自己": "个人",
+            "群友": "个人",
+            "群聊": "群聊",
+            "群": "群聊",
+            "空间": "空间",
+            "说说": "空间",
+            "qzone": "空间",
+            "不知道": "不知道玩啥",
+            "随机": "不知道玩啥",
+            "推荐": "不知道玩啥",
+            "玩啥": "不知道玩啥",
+        }
+        key = aliases.get(normalized, raw)
+
+        if key in MENU_CATEGORIES:
+            lines = [f"FunBox {key}玩法："]
+            lines.extend(f"/{name}：{desc}" for name, desc in MENU_CATEGORIES[key])
+            lines.append("")
+            lines.append("提示：也可以直接叫我，比如“盒子，来点好玩的”。")
+            return "\n".join(lines)
+
+        if raw:
+            return (
+                f"我没找到“{raw}”这个分类。\n"
+                "可用分类：常用、个人、群聊、空间、不知道玩啥。\n"
+                "例：/趣味帮助 群聊"
+            )
+
+        lines = ["FunBox 菜单："]
+        for name, entries in MENU_CATEGORIES.items():
+            command_names = "、".join(f"/{command}" for command, _ in entries)
+            lines.append(f"{name}：{command_names}")
+        lines.extend(
+            (
+                "",
+                "记不住就用：/玩点啥 或 /随机玩法",
+                "细看分类：/趣味帮助 常用、/趣味帮助 个人、/趣味帮助 群聊、/趣味帮助 空间",
+            )
+        )
+        return "\n".join(lines)
+
+    def _recommend_play(self, event: AstrMessageEvent) -> tuple[str, str, str]:
+        items = list(self.recent[self._session_key(event)])[-80:]
+        if len(items) < 5:
+            return ("赛博塔罗", "/赛博塔罗", "样本还少，先抽一张赛博塔罗最不容易冷场。")
+
+        joined = "\n".join(item.get("text", "") for item in items)
+        laugh = len(re.findall(r"哈|草|笑|乐|绷|hhh|233|蚌", joined, re.I))
+        question = joined.count("?") + joined.count("？")
+        exclaim = joined.count("!") + joined.count("！")
+        speakers = {item.get("sender_id") for item in items if item.get("sender_id")}
+        long_msgs = sum(1 for item in items if len(item.get("text", "")) >= 35)
+
+        if laugh >= 5:
+            return ("名场面", "/名场面", "笑点已经冒头了，适合从群里捞一句节目效果。")
+        if question >= 6:
+            return ("氛围雷达", "/氛围雷达", "问号浓度偏高，适合扫一下群聊空气。")
+        if len(items) >= 25 and len(speakers) >= 3:
+            return ("群聊日报", "/群聊日报", "样本够了，适合直接生成一份群聊日报。")
+        if long_msgs >= 6:
+            return ("群聊热词", "/群聊热词", "长消息偏多，先抓关键词比较有意思。")
+        if exclaim >= 5:
+            return ("抽象指数", "/抽象指数", "感叹号能量偏高，适合测一下抽象读数。")
+        return ("今日人设", "/今日人设", "气氛比较平稳，先给 bot 定个今日人设再开玩。")
+
+    def _recommend_text(self, event: AstrMessageEvent) -> str:
+        name, command, reason = self._recommend_play(event)
+        return (
+            "我建议现在玩：\n"
+            f"{command}\n"
+            f"原因：{reason}\n"
+            "如果想交给命运：/随机玩法"
+        )
+
+    def _random_play_text(self, event: AstrMessageEvent) -> str:
+        rng = self._rng(event, "random_play")
+        name, example, reason = rng.choice(PLAY_EXAMPLES)
+        return (
+            f"随机玩法：{name}\n"
+            f"直接发：{example}\n"
+            f"为什么它有戏：{reason}"
+        )
 
     def _update_profile(self, event: AstrMessageEvent, text: str) -> None:
         if not self.enable_profiles or not text:
@@ -719,11 +870,18 @@ class FunBoxPlugin(Star):
             if remaining > 0:
                 return
 
-        reply = await self._generate_with_context(
-            event,
-            task=self._natural_task(text, intent),
-            fallback=self._natural_fallback(intent),
-        )
+        if intent in {"help", "menu"}:
+            reply = self._menu_text()
+        elif intent == "recommend":
+            reply = self._recommend_text(event)
+        elif intent == "random_play":
+            reply = self._random_play_text(event)
+        else:
+            reply = await self._generate_with_context(
+                event,
+                task=self._natural_task(text, intent),
+                fallback=self._natural_fallback(intent),
+            )
         if not addressed:
             self.natural_last_reply_at[self._session_key(event)] = time.time()
         yield event.plain_result(reply)
@@ -731,25 +889,22 @@ class FunBoxPlugin(Star):
 
     @filter.command("趣味帮助", alias={"funbox"})
     async def funbox_help(self, event: AstrMessageEvent):
-        yield event.plain_result(
-            "FunBox 可用指令：\n"
-            "/今日人设：抽一个机器人今日轻人设\n"
-            "/赛博塔罗：抽一张赛博运势卡\n"
-            "/氛围雷达：吐槽最近群聊气氛\n"
-            "/名场面：从最近消息里捞一句节目效果\n"
-            "/今日运势：抽今天的轻量运势\n"
-            "/抽象指数 [内容]：计算一句话或本人近期发言的抽象程度\n"
-            "/群聊热词：看看最近群里都在反复念叨什么\n\n"
-            "/群友小档案 [昵称/QQ]：根据最近发言生成轻量群友画像\n"
-            "/群聊日报：总结最近群聊热词、名场面和今日气质\n"
-            "/空间侦探 [说说内容]：对说说/空间动态做安全锐评\n\n"
-            "也可以直接和我说：\n"
-            "机器人昵称，群里现在什么氛围？\n"
-            "机器人昵称，刚刚有什么名场面？\n"
-            "机器人昵称，我今天运势咋样？\n"
-            "机器人昵称，给我看看小档案\n"
-            "机器人昵称，锐评这条说说"
-        )
+        yield event.plain_result(self._menu_text(self._command_arg(event)))
+        event.stop_event()
+
+    @filter.command("趣味菜单", alias={"菜单", "玩法", "功能菜单"})
+    async def funbox_menu(self, event: AstrMessageEvent):
+        yield event.plain_result(self._menu_text(self._command_arg(event)))
+        event.stop_event()
+
+    @filter.command("玩点啥", alias={"来点好玩的", "推荐玩法", "帮我选"})
+    async def recommend_play(self, event: AstrMessageEvent):
+        yield event.plain_result(self._recommend_text(event))
+        event.stop_event()
+
+    @filter.command("随机玩法", alias={"抽玩法", "随机"})
+    async def random_play(self, event: AstrMessageEvent):
+        yield event.plain_result(self._random_play_text(event))
         event.stop_event()
 
     @filter.command("今日人设", alias={"人设", "今日人格"})
