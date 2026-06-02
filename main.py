@@ -23,6 +23,12 @@ COMMAND_WORDS = {
     "推荐玩法",
     "随机玩法",
     "抽玩法",
+    "funbox自检",
+    "趣味自检",
+    "盒子自检",
+    "funbox示例",
+    "趣味示例",
+    "盒子示例",
     "funbox状态",
     "趣味状态",
     "盒子状态",
@@ -100,6 +106,8 @@ MENU_CATEGORIES = {
         ("随机玩法", "随机抽一个玩法并给示例。"),
     ),
     "维护": (
+        ("funbox自检", "检查 LLM、人格、样本和常用配置。"),
+        ("funbox示例", "给出几条装完就能复制测试的命令。"),
         ("funbox状态", "查看当前会话缓存和配置状态。"),
         ("funbox隐私", "说明 FunBox 如何处理临时样本。"),
         ("funbox清缓存", "清掉当前群聊 FunBox 内存样本。"),
@@ -112,6 +120,8 @@ PLAY_EXAMPLES = (
     ("名场面", "/名场面", "群里有梗味时用它，能捞节目效果。"),
     ("今日人设", "/今日人设", "想让 bot 先定个今日人格就用它。"),
     ("赛博塔罗", "/赛博塔罗", "样本不够或想来点玄学时很好用。"),
+    ("FunBox 自检", "/funbox自检", "装完插件后先跑它，看看配置和上下文是不是正常。"),
+    ("FunBox 示例", "/funbox示例", "新用户不知道怎么玩时，用它拿测试命令。"),
     ("群友小档案", "/群友小档案", "想看自己最近聊天画像时用它。"),
     ("今日运势", "/今日运势", "适合每天先整点轻量玄学。"),
     ("抽象指数", "/抽象指数 我是不是有点离谱", "适合给一句话测抽象读数。"),
@@ -127,7 +137,7 @@ PLAY_EXAMPLES = (
     "astrbot_plugin_funbox",
     "chuiguo+codex",
     "安全轻量的群聊趣味工具箱：人格化自然回复、玩法导航、群聊天气、隐私控制",
-    "1.0.0",
+    "1.0.1",
     "https://github.com/Chuiguo/astrbot_plugin_funbox",
 )
 class FunBoxPlugin(Star):
@@ -451,6 +461,8 @@ class FunBoxPlugin(Star):
     def _detect_intent(self, text: str) -> str | None:
         lowered = text.lower()
         checks = (
+            ("self_check", ("funbox自检", "趣味自检", "盒子自检", "自检一下", "检查一下", "哪里坏了")),
+            ("examples", ("funbox示例", "趣味示例", "盒子示例", "测试命令", "给我示例", "怎么玩示例")),
             ("status", ("funbox状态", "趣味状态", "盒子状态", "状态怎么样", "缓存多少")),
             ("privacy", ("funbox隐私", "趣味隐私", "盒子隐私", "隐私说明", "你记了什么", "会不会存")),
             ("clear_cache", ("funbox清缓存", "趣味清缓存", "盒子清缓存", "清缓存", "清掉缓存", "清空样本")),
@@ -510,6 +522,8 @@ class FunBoxPlugin(Star):
                 "FunBox 可用玩法：今日人设、赛博塔罗、氛围雷达、名场面、"
                 "今日运势、抽象指数、群聊热词。你也可以直接叫我的昵称，例如：群里现在啥氛围？"
             ),
+            "self_check": "请发送 /funbox自检，我会检查 LLM、人格、样本和配置状态。",
+            "examples": "请发送 /funbox示例，我会给你几条可以直接复制的测试命令。",
             "status": "FunBox 状态可以用 /funbox状态 查看。",
             "privacy": "FunBox 只保留当前运行内存里的最近群聊样本，不写数据库；可用 /funbox清缓存 或 /funbox忘记我。",
             "clear_cache": "要清当前会话缓存，请发送 /funbox清缓存。",
@@ -538,6 +552,8 @@ class FunBoxPlugin(Star):
                 "用户在问 FunBox 怎么玩。请用自然聊天方式介绍玩法，告诉用户可以直接说话，"
                 "例如“盒子，群里现在啥氛围”。"
             ),
+            "self_check": "用户想让 FunBox 自检。请提醒可用 /funbox自检。",
+            "examples": "用户想要 FunBox 测试示例。请提醒可用 /funbox示例。",
             "status": "用户想查看 FunBox 当前状态。请提醒可用 /funbox状态。",
             "privacy": "用户想了解 FunBox 隐私说明。请简短说明只用内存样本、不写数据库、可清缓存和忘记我。",
             "clear_cache": "用户想清理 FunBox 缓存。请提醒可用 /funbox清缓存。",
@@ -659,6 +675,57 @@ class FunBoxPlugin(Star):
             f"直接发：{example}\n"
             f"为什么它有戏：{reason}"
         )
+
+    def _examples_text(self) -> str:
+        return (
+            "FunBox 快速测试示例：\n"
+            "1. /趣味菜单\n"
+            "2. /玩点啥\n"
+            "3. /群聊天气\n"
+            "4. /名场面\n"
+            "5. /群聊榜单\n"
+            "6. /空间侦探 今天又被生活创飞了\n"
+            "7. /funbox状态\n"
+            "8. /funbox隐私\n"
+            "自然语言也可以：盒子，来点好玩的"
+        )
+
+    async def _self_check_text(self, event: AstrMessageEvent) -> str:
+        session_key = self._session_key(event)
+        recent_count = len(self.recent[session_key])
+        profile_count = len(self.profiles[session_key])
+        provider = self._get_provider(event)
+        persona_prompt = await self._current_persona_prompt(event)
+
+        lines = ["FunBox 自检："]
+        lines.append(f"插件版本：1.0.1")
+        lines.append(f"LLM provider：{'已读取' if provider else '未读取到，LLM 玩法会走模板兜底'}")
+        lines.append(f"AstrBot 人格：{'已读取' if persona_prompt else '未读取到，使用 persona_style 配置'}")
+        lines.append(f"最近消息样本：{recent_count}/{self.max_cache_messages}")
+        lines.append(f"群友小档案样本：{profile_count} 个")
+        lines.append(f"自然回复：{'开启' if self.enable_natural_reply else '关闭'}")
+        lines.append(f"只在叫到 bot 时回复：{'是' if self.only_when_addressed else '否'}")
+        lines.append(f"自动日报：{'开启' if self.enable_auto_daily else '关闭'}")
+
+        suggestions = []
+        if not provider and self.enable_llm:
+            suggestions.append("LLM provider 没读到：上下文生成会退回模板，检查 AstrBot 当前会话模型配置。")
+        if recent_count < 5:
+            suggestions.append("样本偏少：群里再聊几句后，/群聊天气、/名场面、/群聊榜单 会更准。")
+        if self.enable_natural_reply and not self.only_when_addressed:
+            suggestions.append("自然回复较主动：如果怕插嘴，建议开启 only_when_addressed。")
+        if self.enable_auto_daily:
+            suggestions.append("自动日报已开启：它会在到点后群里首次发言时触发，每会话每天一次。")
+
+        if suggestions:
+            lines.append("")
+            lines.append("建议：")
+            lines.extend(f"- {item}" for item in suggestions)
+        else:
+            lines.append("")
+            lines.append("结论：状态不错，可以先试 /群聊天气 或 /玩点啥。")
+
+        return "\n".join(lines)
 
     def _status_text(self, event: AstrMessageEvent) -> str:
         session_key = self._session_key(event)
@@ -1132,6 +1199,10 @@ class FunBoxPlugin(Star):
 
         if intent in {"help", "menu"}:
             reply = self._menu_text()
+        elif intent == "self_check":
+            reply = await self._self_check_text(event)
+        elif intent == "examples":
+            reply = self._examples_text()
         elif intent == "recommend":
             reply = self._recommend_text(event)
         elif intent == "random_play":
@@ -1180,6 +1251,16 @@ class FunBoxPlugin(Star):
     @filter.command("随机玩法", alias={"抽玩法", "随机"})
     async def random_play(self, event: AstrMessageEvent):
         yield event.plain_result(self._random_play_text(event))
+        event.stop_event()
+
+    @filter.command("funbox自检", alias={"趣味自检", "盒子自检"})
+    async def funbox_self_check(self, event: AstrMessageEvent):
+        yield event.plain_result(await self._self_check_text(event))
+        event.stop_event()
+
+    @filter.command("funbox示例", alias={"趣味示例", "盒子示例"})
+    async def funbox_examples(self, event: AstrMessageEvent):
+        yield event.plain_result(self._examples_text())
         event.stop_event()
 
     @filter.command("funbox状态", alias={"趣味状态", "盒子状态"})
