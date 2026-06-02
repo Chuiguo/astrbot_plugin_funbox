@@ -51,7 +51,7 @@ NATURAL_NAMES = ("funbox", "盒子", "小盒", "小盒子", "趣味盒")
     "astrbot_plugin_funbox",
     "chuiguo+codex",
     "安全轻量的群聊趣味工具箱：人格化自然回复、群友小档案、群聊日报、空间锐评",
-    "0.7.0",
+    "0.7.1",
     "local",
 )
 class FunBoxPlugin(Star):
@@ -688,7 +688,10 @@ class FunBoxPlugin(Star):
         if self._should_auto_daily(event):
             session_key = self._session_key(event)
             self.daily_report_sent[session_key] = datetime.now().strftime("%Y-%m-%d")
-            yield event.plain_result(await self._build_daily_report(event, auto=True))
+            # Keep this listener as a normal coroutine. Yielding here turns the
+            # cache collector into an async generator and can trip AstrBot's
+            # pipeline cleanup during plugin reload.
+            await event.send(event.plain_result(await self._build_daily_report(event, auto=True)))
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def natural_funbox_chat(self, event: AstrMessageEvent):
