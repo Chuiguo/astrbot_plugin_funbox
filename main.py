@@ -5,6 +5,7 @@ from datetime import datetime
 import hashlib
 import random
 import re
+import time
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
@@ -32,6 +33,15 @@ COMMAND_WORDS = {
     "抽象评分",
     "群聊热词",
     "热词",
+    "群友小档案",
+    "小档案",
+    "群友档案",
+    "群聊日报",
+    "今日日报",
+    "今日群聊日报",
+    "空间侦探",
+    "说说锐评",
+    "空间锐评",
 }
 
 NATURAL_NAMES = ("funbox", "盒子", "小盒", "小盒子", "趣味盒")
@@ -40,8 +50,8 @@ NATURAL_NAMES = ("funbox", "盒子", "小盒", "小盒子", "趣味盒")
 @register(
     "astrbot_plugin_funbox",
     "chuiguo+codex",
-    "安全轻量的群聊趣味工具箱：今日人设、赛博塔罗、氛围雷达、名场面",
-    "0.6.0",
+    "安全轻量的群聊趣味工具箱：人格化自然回复、群友小档案、群聊日报、空间锐评",
+    "0.7.0",
     "local",
 )
 class FunBoxPlugin(Star):
@@ -53,7 +63,28 @@ class FunBoxPlugin(Star):
         self.enable_natural_reply = self._config_bool("enable_natural_reply", True)
         self.only_when_addressed = self._config_bool("only_when_addressed", True)
         self.enable_llm = self._config_bool("enable_llm", True)
+        self.persona_style = str(
+            self._config_get(
+                "persona_style",
+                "跟随 AstrBot 当前人格，嘴有点损但不攻击，像熟人群友一样会接梗。",
+            )
+            or ""
+        ).strip()
+        self.natural_cooldown_seconds = self._config_int(
+            "natural_cooldown_seconds",
+            180,
+            minimum=0,
+        )
+        self.enable_profiles = self._config_bool("enable_profiles", True)
+        self.enable_auto_daily = self._config_bool("enable_auto_daily", False)
+        self.daily_report_hour = min(
+            23,
+            max(0, self._config_int("daily_report_hour", 23, minimum=0)),
+        )
         self.recent = defaultdict(lambda: deque(maxlen=self.max_cache_messages))
+        self.profiles = defaultdict(dict)
+        self.natural_last_reply_at = defaultdict(float)
+        self.daily_report_sent = {}
         self.bot_names = set(NATURAL_NAMES)
         self._bot_login_checked = False
         for name in self._config_list("extra_trigger_names", []):
@@ -206,6 +237,71 @@ class FunBoxPlugin(Star):
             logger.debug(f"FunBox 获取 LLM provider 失败: {e}")
             return None
 
+    def _get_event_platform_name(self, event: AstrMessageEvent) -> str:
+        getter = getattr(event, "get_platform_name", None)
+        if callable(getter):
+            try:
+                platform_name = getter()
+            except Exception:
+                platform_name = None
+            if platform_name:
+                return str(platform_name)
+
+        umo = getattr(event, "unified_msg_origin", None)
+        if umo and ":" in str(umo):
+            return str(umo).split(":", 1)[0]
+        return ""
+
+    def _get_provider_settings(self, event: AstrMessageEvent) -> dict:
+        umo = getattr(event, "unified_msg_origin", None)
+        try:
+            cfg = self.context.get_config(str(umo)) if umo else self.context.get_config()
+        except TypeError:
+            try:
+                cfg = self.context.get_config()
+            except Exception:
+                return {}
+        except Exception:
+            return {}
+
+        if not isinstance(cfg, dict):
+            return {}
+        provider_settings = cfg.get("provider_settings", {})
+        return provider_settings if isinstance(provider_settings, dict) else {}
+
+    async def _current_persona_prompt(self, event: AstrMessageEvent) -> str:
+        umo = getattr(event, "unified_msg_origin", None)
+        if not umo:
+            return ""
+
+        persona_manager = getattr(self.context, "persona_manager", None)
+        if persona_manager is None:
+            return ""
+
+        try:
+            conversation_persona_id = None
+            conversation_manager = getattr(self.context, "conversation_manager", None)
+            if conversation_manager is not None:
+                cid = await conversation_manager.get_curr_conversation_id(str(umo))
+                if cid:
+                    conversation = await conversation_manager.get_conversation(str(umo), cid)
+                    if conversation:
+                        conversation_persona_id = getattr(conversation, "persona_id", None)
+
+            persona_id, persona, _, _ = await persona_manager.resolve_selected_persona(
+                umo=str(umo),
+                conversation_persona_id=conversation_persona_id,
+                platform_name=self._get_event_platform_name(event),
+                provider_settings=self._get_provider_settings(event),
+            )
+            if not persona and persona_id and hasattr(persona_manager, "get_persona_v3_by_id"):
+                persona = persona_manager.get_persona_v3_by_id(persona_id)
+            if isinstance(persona, dict):
+                return str(persona.get("prompt") or "").strip()
+        except Exception as e:
+            logger.debug(f"FunBox 解析当前会话人格失败，使用插件人格配置: {e}")
+        return ""
+
     def _clip_reply(self, text: str, limit: int = 520) -> str:
         text = re.sub(r"\n{3,}", "\n\n", text).strip()
         if len(text) > limit:
@@ -227,11 +323,22 @@ class FunBoxPlugin(Star):
             return fallback
 
         context_text = self._recent_context(event)
+        persona_style = self.persona_style or "跟随 AstrBot 当前人格，短、聪明、会接梗。"
+        astrbot_persona = await self._current_persona_prompt(event)
+        persona_instruction = (
+            f"AstrBot 当前会话人格：\n{astrbot_persona[:1200]}\n"
+            if astrbot_persona
+            else "AstrBot 当前会话人格：未读取到，使用 FunBox 人格/口吻配置。\n"
+        )
         system_prompt = (
             "你是 FunBox，一个安全、轻量、嘴有点损但不攻击人的群聊趣味插件。\n"
             "你要基于最近群聊上下文生成中文短回复。不要泄露隐私，不做人身攻击，"
             "不要挑起争吵，不要输出黄赌毒或仇恨内容。\n"
-            "风格：好笑、聪明、短、像群友能接上的梗。"
+            "风格：好笑、聪明、短、像群友能接上的梗。\n"
+            f"当前 FunBox 人格/口吻：{persona_style}\n"
+            f"{persona_instruction}"
+            "如果 AstrBot 当前会话已经设置了人格或角色，请优先贴合当前人格，"
+            "不要突然切换成完全陌生的人设。"
         )
         prompt = (
             f"最近群聊上下文：\n{context_text or '暂无，按当前用户和指令轻量发挥。'}\n\n"
@@ -269,6 +376,9 @@ class FunBoxPlugin(Star):
         lowered = text.lower()
         checks = (
             ("help", ("帮助", "怎么用", "你会什么", "funbox")),
+            ("profile", ("小档案", "群友档案", "群友画像", "我的档案", "给我建档")),
+            ("daily_report", ("日报", "今日总结", "今天群里", "群聊总结")),
+            ("qzone", ("空间侦探", "说说锐评", "空间锐评", "空间报告", "分析说说", "锐评说说")),
             ("hot_words", ("热词", "关键词", "聊什么", "高频词")),
             ("scene", ("名场面", "经典发言", "哪句最", "节目效果")),
             ("vibe", ("氛围", "气氛", "群里咋样", "群聊咋样", "雷达")),
@@ -322,6 +432,9 @@ class FunBoxPlugin(Star):
             "fortune": "今日运势：稳中带皮\n主题：适合观察群友，不适合主动跳进战场。\n宜：先备份\n忌：边急边改配置",
             "persona": "今日人设：赛博树洞管理员\n今天负责接住废话、怪话和半夜突然的 emo。",
             "abstract": "抽象指数：42/100\n结论：有一点小火花，但还没到群聊博物馆级别。",
+            "profile": "群友小档案还在生成中：样本太少，再多聊几句我就能端出赛博画像。",
+            "daily_report": "群聊日报启动失败：今天的样本还不够，群友再冒泡几句我就能写日报。",
+            "qzone": "空间侦探启动：这条动态看起来有点故事，但证据不足，建议补一句原文让我锐评。",
         }
         return fallback_map.get(intent) or "我在，想玩什么？可以问我：群里现在啥氛围？"
 
@@ -338,9 +451,222 @@ class FunBoxPlugin(Star):
             "fortune": "用户想看今日运势。请结合上下文生成今日运势、主题、宜、忌。",
             "persona": "用户想看你今天的人设。请结合上下文生成今日人设、一句描述、口头禅。",
             "abstract": "用户想测抽象/发疯程度。请结合用户原话和上下文给出抽象指数、结论、建议。",
+            "profile": "用户想看群友小档案。请基于上下文给出轻松画像，只描述聊天风格，不做真实人格判断。",
+            "daily_report": "用户想看群聊日报。请总结最近群聊热词、名场面、气氛和一句今日结论。",
+            "qzone": "用户想做空间/说说锐评。请像空间侦探一样分析原话或上下文，轻松吐槽但不要攻击本人。",
         }
         base = task_map.get(intent) or "用户正在自然地和你说话。请像 FunBox 一样接住这句话，短而好笑地回复。"
         return f"用户原话：{text}\n{base}"
+
+    def _update_profile(self, event: AstrMessageEvent, text: str) -> None:
+        if not self.enable_profiles or not text:
+            return
+
+        session_key = self._session_key(event)
+        sender_id = self._sender_id(event)
+        sender_name = self._sender_name(event)
+        now_text = datetime.now().strftime("%Y-%m-%d %H:%M")
+        profile = self.profiles[session_key].setdefault(
+            sender_id,
+            {
+                "message_count": 0,
+                "last_name": sender_name,
+                "last_text": "",
+                "last_active": "",
+                "abstract_total": 0,
+                "abstract_peak": 0,
+                "laugh_count": 0,
+                "question_count": 0,
+                "exclaim_count": 0,
+                "long_count": 0,
+            },
+        )
+
+        score, _ = self._abstract_score(text)
+        profile["message_count"] += 1
+        profile["last_name"] = sender_name
+        profile["last_text"] = text
+        profile["last_active"] = now_text
+        profile["abstract_total"] += score
+        profile["abstract_peak"] = max(int(profile.get("abstract_peak", 0)), score)
+        profile["laugh_count"] += len(re.findall(r"哈|草|笑|乐|绷|hhh|233|蚌", text, re.I))
+        profile["question_count"] += text.count("?") + text.count("？")
+        profile["exclaim_count"] += text.count("!") + text.count("！")
+        profile["long_count"] += int(len(text) >= 35)
+
+    def _match_profile(self, event: AstrMessageEvent, query: str) -> tuple[str | None, dict | None]:
+        profiles = self.profiles[self._session_key(event)]
+        if not query:
+            sender_id = self._sender_id(event)
+            return sender_id, profiles.get(sender_id)
+
+        needle = self._normalize_bot_name(query)
+        for sender_id, profile in profiles.items():
+            name = self._normalize_bot_name(profile.get("last_name", ""))
+            if needle and (needle in self._normalize_bot_name(sender_id) or needle in name):
+                return sender_id, profile
+        return None, None
+
+    def _profile_fallback(self, sender_id: str, profile: dict) -> str:
+        count = max(1, int(profile.get("message_count", 0)))
+        avg_abstract = int(profile.get("abstract_total", 0) / count)
+        peak = int(profile.get("abstract_peak", 0))
+        laugh = int(profile.get("laugh_count", 0))
+        questions = int(profile.get("question_count", 0))
+        long_count = int(profile.get("long_count", 0))
+
+        if avg_abstract >= 62 or peak >= 85:
+            tag = "抽象火花携带者"
+            read = "偶尔一句话就能把群聊空气拧成麻花。"
+        elif laugh >= max(3, count // 5):
+            tag = "笑点扩散源"
+            read = "很擅长让气氛轻轻往发癫方向滑。"
+        elif questions >= max(4, count // 4):
+            tag = "问题雷达"
+            read = "经常负责把大家脑子里的问号具象化。"
+        elif long_count >= max(2, count // 5):
+            tag = "认真输出型选手"
+            read = "不是每次都短打，有时会真的认真把话讲完整。"
+        else:
+            tag = "稳定冒泡群友"
+            read = "存在感不一定最大，但属于群聊生态里的稳定像素点。"
+
+        return (
+            f"群友小档案：{profile.get('last_name', sender_id)}\n"
+            f"标签：{tag}\n"
+            f"样本：{count} 条，抽象均值 {avg_abstract}/100，峰值 {peak}/100\n"
+            f"最近：{profile.get('last_text', '暂无')}\n"
+            f"观察：{read}"
+        )
+
+    def _hot_word_counts(self, items: list[dict], *, top: int = 8) -> list[tuple[str, int]]:
+        joined = " ".join(item.get("text", "") for item in items)
+        words = re.findall(r"[\u4e00-\u9fa5]{2,6}|[a-zA-Z0-9_]{3,}", joined)
+        stop_words = {
+            "这个",
+            "那个",
+            "我们",
+            "你们",
+            "他们",
+            "哈哈",
+            "可以",
+            "不是",
+            "然后",
+            "什么",
+            "一下",
+            "感觉",
+            "真的",
+            "今天",
+            "最近",
+            "就是",
+        }
+        counter = Counter(
+            word.lower()
+            for word in words
+            if word not in stop_words and not word.isdigit()
+        )
+        return counter.most_common(top)
+
+    def _scene_score(self, item: dict) -> int:
+        text = item.get("text", "")
+        return (
+            len(text)
+            + 8 * len(re.findall(r"哈|草|笑|乐|绷|蚌", text, re.I))
+            + 4 * (
+                text.count("!")
+                + text.count("！")
+                + text.count("?")
+                + text.count("？")
+            )
+        )
+
+    def _scene_candidates(self, items: list[dict], *, top: int = 5) -> list[dict]:
+        return sorted(items, key=self._scene_score, reverse=True)[:top]
+
+    async def _build_daily_report(self, event: AstrMessageEvent, *, auto: bool = False) -> str:
+        items = list(self.recent[self._session_key(event)])[-120:]
+        if len(items) < 5:
+            return "群聊日报启动失败：今天的样本还不够，群友再冒泡几句我就能写日报。"
+
+        texts = [item.get("text", "") for item in items if item.get("text")]
+        joined = "\n".join(texts)
+        speakers = {item.get("sender") for item in items if item.get("sender")}
+        laugh = len(re.findall(r"哈|草|笑|乐|绷|hhh|233|蚌", joined, re.I))
+        question = joined.count("?") + joined.count("？")
+        exclaim = joined.count("!") + joined.count("！")
+        common = self._hot_word_counts(items, top=6)
+        hot_text = "、".join(f"{word} x{count}" for word, count in common) or "暂无明显热词"
+        scenes = self._scene_candidates(items[-80:], top=3)
+        scene_text = "\n".join(
+            f"{item.get('time')} {item.get('sender')}：{item.get('text')}"
+            for item in scenes
+        ) or "暂无名场面"
+
+        if laugh >= 5:
+            mood = "发癫回暖"
+        elif question >= 6:
+            mood = "集体排障"
+        elif exclaim >= 5:
+            mood = "能量偏高"
+        else:
+            mood = "稳定冒泡"
+
+        title = "自动群聊日报" if auto else "群聊日报"
+        fallback = (
+            f"{title}：{mood}\n"
+            f"样本：最近 {len(texts)} 条，约 {len(speakers)} 人参与\n"
+            f"热词：{hot_text}\n"
+            f"名场面：{scene_text.splitlines()[0] if scene_text else '暂无'}\n"
+            "结论：今天这群像一台会自己吐槽的轻量服务器。"
+        )
+        return await self._generate_with_context(
+            event,
+            task=(
+                f"生成一份{'自动' if auto else ''}群聊日报。要求轻松好笑、不攻击具体群友。\n"
+                f"统计：样本 {len(texts)} 条，参与者约 {len(speakers)} 人，"
+                f"笑点 {laugh}，问号 {question}，感叹号 {exclaim}，气质 {mood}。\n"
+                f"热词：{hot_text}\n"
+                f"名场面候选：\n{scene_text}\n"
+                "输出格式：群聊日报：xxx\n热词：xxx\n名场面：xxx\n今日结论：xxx"
+            ),
+            fallback=fallback,
+            limit=700,
+        )
+
+    def _should_auto_daily(self, event: AstrMessageEvent) -> bool:
+        if not self.enable_auto_daily:
+            return False
+
+        now = datetime.now()
+        if now.hour < self.daily_report_hour:
+            return False
+
+        session_key = self._session_key(event)
+        today = now.strftime("%Y-%m-%d")
+        if self.daily_report_sent.get(session_key) == today:
+            return False
+        if len(self.recent[session_key]) < 12:
+            return False
+        return True
+
+    def _space_fallback(self, text: str) -> str:
+        score, level = self._abstract_score(text)
+        length = len(text)
+        if "。" in text or "，" in text or "," in text:
+            style = "叙事型"
+        elif score >= 65:
+            style = "抽象宣言型"
+        elif length <= 12:
+            style = "谜语人型"
+        else:
+            style = "轻量碎碎念型"
+
+        return (
+            f"空间侦探报告：{style}\n"
+            f"抽象读数：{score}/100\n"
+            f"案情摘要：{level}\n"
+            "锐评：这条像是发给全世界看，但真正懂的人可能只有发的人自己。"
+        )
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def remember_group_message(self, event: AstrMessageEvent):
@@ -350,6 +676,7 @@ class FunBoxPlugin(Star):
         if self._is_self_message(event):
             return
 
+        self._update_profile(event, text)
         self.recent[self._session_key(event)].append(
             {
                 "time": datetime.now().strftime("%H:%M"),
@@ -358,6 +685,10 @@ class FunBoxPlugin(Star):
                 "text": text,
             }
         )
+        if self._should_auto_daily(event):
+            session_key = self._session_key(event)
+            self.daily_report_sent[session_key] = datetime.now().strftime("%Y-%m-%d")
+            yield event.plain_result(await self._build_daily_report(event, auto=True))
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def natural_funbox_chat(self, event: AstrMessageEvent):
@@ -375,12 +706,23 @@ class FunBoxPlugin(Star):
             return
         if not addressed and not self._looks_like_fun_request(text, intent):
             return
+        if not addressed and self.natural_cooldown_seconds > 0:
+            session_key = self._session_key(event)
+            remaining = (
+                self.natural_last_reply_at[session_key]
+                + self.natural_cooldown_seconds
+                - time.time()
+            )
+            if remaining > 0:
+                return
 
         reply = await self._generate_with_context(
             event,
             task=self._natural_task(text, intent),
             fallback=self._natural_fallback(intent),
         )
+        if not addressed:
+            self.natural_last_reply_at[self._session_key(event)] = time.time()
         yield event.plain_result(reply)
         event.stop_event()
 
@@ -395,10 +737,15 @@ class FunBoxPlugin(Star):
             "/今日运势：抽今天的轻量运势\n"
             "/抽象指数 [内容]：计算一句话或本人近期发言的抽象程度\n"
             "/群聊热词：看看最近群里都在反复念叨什么\n\n"
+            "/群友小档案 [昵称/QQ]：根据最近发言生成轻量群友画像\n"
+            "/群聊日报：总结最近群聊热词、名场面和今日气质\n"
+            "/空间侦探 [说说内容]：对说说/空间动态做安全锐评\n\n"
             "也可以直接和我说：\n"
             "机器人昵称，群里现在什么氛围？\n"
             "机器人昵称，刚刚有什么名场面？\n"
-            "机器人昵称，我今天运势咋样？"
+            "机器人昵称，我今天运势咋样？\n"
+            "机器人昵称，给我看看小档案\n"
+            "机器人昵称，锐评这条说说"
         )
         event.stop_event()
 
@@ -427,7 +774,8 @@ class FunBoxPlugin(Star):
             event,
             task=(
                 "为机器人生成一个“今日人设”。要参考群聊最近的气氛，输出格式：\n"
-                "今日人设：xxx\n一句描述：xxx\n今日口头禅：xxx"
+                "今日人设：xxx\n一句描述：xxx\n今日口头禅：xxx\n"
+                f"人设必须贴合当前人格/口吻：{self.persona_style or '跟随 AstrBot 当前人格'}"
             ),
             fallback=fallback,
         )
@@ -652,6 +1000,77 @@ class FunBoxPlugin(Star):
                 "输出格式：群聊热词雷达：\n1. xxx\n2. xxx\n一句结论：xxx"
             ),
             fallback=fallback,
+        )
+        yield event.plain_result(reply)
+        event.stop_event()
+
+    @filter.command("群友小档案", alias={"小档案", "群友档案"})
+    async def member_profile(self, event: AstrMessageEvent):
+        if not self.enable_profiles:
+            yield event.plain_result("群友小档案已在配置里关闭。")
+            event.stop_event()
+            return
+
+        query = self._command_arg(event)
+        sender_id, profile = self._match_profile(event, query)
+        if not sender_id or not profile:
+            target = query or "你"
+            yield event.plain_result(f"暂时没有 {target} 的小档案样本。再聊几句，我就能开始建档。")
+            event.stop_event()
+            return
+
+        samples = [
+            item.get("text", "")
+            for item in self.recent[self._session_key(event)]
+            if item.get("sender_id") == sender_id and item.get("text")
+        ][-8:]
+        fallback = self._profile_fallback(sender_id, profile)
+        reply = await self._generate_with_context(
+            event,
+            task=(
+                "为群友生成一份轻量小档案，只描述最近聊天风格，不要做真实人格判断，"
+                "不要攻击或羞辱对方。\n"
+                f"目标：{profile.get('last_name', sender_id)} ({sender_id})\n"
+                f"统计兜底：\n{fallback}\n"
+                f"最近样本：\n" + "\n".join(samples or ["暂无"])
+                + "\n输出格式：群友小档案：xxx\n标签：xxx\n观察：xxx\n一句安全锐评：xxx"
+            ),
+            fallback=fallback,
+            limit=640,
+        )
+        yield event.plain_result(reply)
+        event.stop_event()
+
+    @filter.command("群聊日报", alias={"今日日报", "今日群聊日报"})
+    async def daily_report(self, event: AstrMessageEvent):
+        yield event.plain_result(await self._build_daily_report(event))
+        event.stop_event()
+
+    @filter.command("空间侦探", alias={"说说锐评", "空间锐评"})
+    async def space_detective(self, event: AstrMessageEvent):
+        text = self._command_arg(event)
+        source = "用户提供的说说内容"
+        if not text:
+            text = self._recent_context(event, limit=12)
+            source = "最近群聊上下文"
+
+        if not text:
+            yield event.plain_result("空间侦探启动失败：没看到说说原文。用法：/空间侦探 今天又被生活创飞了")
+            event.stop_event()
+            return
+
+        fallback = self._space_fallback(text)
+        reply = await self._generate_with_context(
+            event,
+            task=(
+                "做一份“空间侦探/说说锐评”。要像读 QQ 空间动态一样分析，但不要攻击本人，"
+                "不要泄露隐私，不要鼓励网暴。\n"
+                f"来源：{source}\n"
+                f"文本：{text[:900]}\n"
+                "输出格式：空间侦探报告：xxx\n案情摘要：xxx\n隐藏情绪：xxx\n安全锐评：xxx"
+            ),
+            fallback=fallback,
+            limit=680,
         )
         yield event.plain_result(reply)
         event.stop_event()
