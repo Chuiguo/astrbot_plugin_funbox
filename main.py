@@ -32,10 +32,16 @@ COMMAND_WORDS = {
     "funbox忘记我",
     "趣味忘记我",
     "盒子忘记我",
+    "funbox隐私",
+    "趣味隐私",
+    "盒子隐私",
     "群聊榜单",
     "抽象王",
     "梗王",
     "问号王",
+    "群聊天气",
+    "群聊气象",
+    "聊天气象",
     "今日人设",
     "人设",
     "今日人格",
@@ -80,6 +86,7 @@ MENU_CATEGORIES = {
         ("抽象指数", "测一句话或本人近期发言的抽象程度。"),
     ),
     "群聊": (
+        ("群聊天气", "把最近群聊气氛报成赛博天气。"),
         ("群聊热词", "统计最近反复出现的关键词。"),
         ("群聊日报", "总结最近热词、名场面和气质。"),
         ("群聊榜单", "抽象王、梗王、问号王轻量排行。"),
@@ -94,6 +101,7 @@ MENU_CATEGORIES = {
     ),
     "维护": (
         ("funbox状态", "查看当前会话缓存和配置状态。"),
+        ("funbox隐私", "说明 FunBox 如何处理临时样本。"),
         ("funbox清缓存", "清掉当前群聊 FunBox 内存样本。"),
         ("funbox忘记我", "删除当前用户在 FunBox 里的最近样本。"),
     ),
@@ -107,6 +115,7 @@ PLAY_EXAMPLES = (
     ("群友小档案", "/群友小档案", "想看自己最近聊天画像时用它。"),
     ("今日运势", "/今日运势", "适合每天先整点轻量玄学。"),
     ("抽象指数", "/抽象指数 我是不是有点离谱", "适合给一句话测抽象读数。"),
+    ("群聊天气", "/群聊天气", "想快速知道群里现在是晴天还是局部发癫时用它。"),
     ("群聊热词", "/群聊热词", "最近大家反复念叨同一件事时用它。"),
     ("群聊日报", "/群聊日报", "群里聊了一阵后，用它收个尾。"),
     ("群聊榜单", "/群聊榜单", "样本多了以后可以看看今天谁最有节目效果。"),
@@ -117,8 +126,8 @@ PLAY_EXAMPLES = (
 @register(
     "astrbot_plugin_funbox",
     "chuiguo+codex",
-    "安全轻量的群聊趣味工具箱：人格化自然回复、玩法导航、群聊榜单、隐私控制",
-    "0.9.0",
+    "安全轻量的群聊趣味工具箱：人格化自然回复、玩法导航、群聊天气、隐私控制",
+    "1.0.0",
     "https://github.com/Chuiguo/astrbot_plugin_funbox",
 )
 class FunBoxPlugin(Star):
@@ -443,6 +452,7 @@ class FunBoxPlugin(Star):
         lowered = text.lower()
         checks = (
             ("status", ("funbox状态", "趣味状态", "盒子状态", "状态怎么样", "缓存多少")),
+            ("privacy", ("funbox隐私", "趣味隐私", "盒子隐私", "隐私说明", "你记了什么", "会不会存")),
             ("clear_cache", ("funbox清缓存", "趣味清缓存", "盒子清缓存", "清缓存", "清掉缓存", "清空样本")),
             ("forget_me", ("funbox忘记我", "趣味忘记我", "盒子忘记我", "忘记我", "删掉我的样本")),
             ("leaderboard", ("群聊榜单", "排行榜", "抽象王", "梗王", "问号王", "今日榜单")),
@@ -452,6 +462,7 @@ class FunBoxPlugin(Star):
             ("help", ("帮助", "怎么用", "你会什么", "funbox")),
             ("profile", ("小档案", "群友档案", "群友画像", "我的档案", "给我建档")),
             ("daily_report", ("日报", "今日总结", "今天群里", "群聊总结")),
+            ("weather", ("群聊天气", "群聊气象", "聊天气象", "天气预报", "今天群里天气")),
             ("qzone", ("空间侦探", "说说锐评", "空间锐评", "空间报告", "分析说说", "锐评说说")),
             ("hot_words", ("热词", "关键词", "聊什么", "高频词")),
             ("scene", ("名场面", "经典发言", "哪句最", "节目效果")),
@@ -500,6 +511,7 @@ class FunBoxPlugin(Star):
                 "今日运势、抽象指数、群聊热词。你也可以直接叫我的昵称，例如：群里现在啥氛围？"
             ),
             "status": "FunBox 状态可以用 /funbox状态 查看。",
+            "privacy": "FunBox 只保留当前运行内存里的最近群聊样本，不写数据库；可用 /funbox清缓存 或 /funbox忘记我。",
             "clear_cache": "要清当前会话缓存，请发送 /funbox清缓存。",
             "forget_me": "要删除你的最近样本，请发送 /funbox忘记我。",
             "leaderboard": "群聊榜单还没有样本。先让群友聊几句，我再开始颁奖。",
@@ -515,6 +527,7 @@ class FunBoxPlugin(Star):
             "abstract": "抽象指数：42/100\n结论：有一点小火花，但还没到群聊博物馆级别。",
             "profile": "群友小档案还在生成中：样本太少，再多聊几句我就能端出赛博画像。",
             "daily_report": "群聊日报启动失败：今天的样本还不够，群友再冒泡几句我就能写日报。",
+            "weather": "群聊天气：样本不足\n天气：刚开机的小晴天\n建议：再聊几句，我就能报局部发癫概率。",
             "qzone": "空间侦探启动：这条动态看起来有点故事，但证据不足，建议补一句原文让我锐评。",
         }
         return fallback_map.get(intent) or "我在，想玩什么？可以问我：群里现在啥氛围？"
@@ -526,6 +539,7 @@ class FunBoxPlugin(Star):
                 "例如“盒子，群里现在啥氛围”。"
             ),
             "status": "用户想查看 FunBox 当前状态。请提醒可用 /funbox状态。",
+            "privacy": "用户想了解 FunBox 隐私说明。请简短说明只用内存样本、不写数据库、可清缓存和忘记我。",
             "clear_cache": "用户想清理 FunBox 缓存。请提醒可用 /funbox清缓存。",
             "forget_me": "用户想删除自己的 FunBox 样本。请提醒可用 /funbox忘记我。",
             "leaderboard": "用户想看群聊榜单。请说明可用 /群聊榜单、/群聊榜单 抽象、/群聊榜单 梗王、/群聊榜单 问号。",
@@ -541,6 +555,7 @@ class FunBoxPlugin(Star):
             "abstract": "用户想测抽象/发疯程度。请结合用户原话和上下文给出抽象指数、结论、建议。",
             "profile": "用户想看群友小档案。请基于上下文给出轻松画像，只描述聊天风格，不做真实人格判断。",
             "daily_report": "用户想看群聊日报。请总结最近群聊热词、名场面、气氛和一句今日结论。",
+            "weather": "用户想看群聊天气。请把最近群聊气氛写成天气预报，包含天气、温度、风向、预警、建议。",
             "qzone": "用户想做空间/说说锐评。请像空间侦探一样分析原话或上下文，轻松吐槽但不要攻击本人。",
         }
         base = task_map.get(intent) or "用户正在自然地和你说话。请像 FunBox 一样接住这句话，短而好笑地回复。"
@@ -619,12 +634,12 @@ class FunBoxPlugin(Star):
             return ("名场面", "/名场面", "笑点已经冒头了，适合从群里捞一句节目效果。")
         if question >= 6:
             return ("氛围雷达", "/氛围雷达", "问号浓度偏高，适合扫一下群聊空气。")
+        if exclaim >= 5:
+            return ("群聊天气", "/群聊天气", "感叹号能量偏高，适合报一份赛博天气预报。")
         if len(items) >= 25 and len(speakers) >= 3:
             return ("群聊日报", "/群聊日报", "样本够了，适合直接生成一份群聊日报。")
         if long_msgs >= 6:
             return ("群聊热词", "/群聊热词", "长消息偏多，先抓关键词比较有意思。")
-        if exclaim >= 5:
-            return ("抽象指数", "/抽象指数", "感叹号能量偏高，适合测一下抽象读数。")
         return ("今日人设", "/今日人设", "气氛比较平稳，先给 bot 定个今日人设再开玩。")
 
     def _recommend_text(self, event: AstrMessageEvent) -> str:
@@ -664,6 +679,16 @@ class FunBoxPlugin(Star):
             f"自然回复：{addressed_mode}，冷却 {self.natural_cooldown_seconds}s\n"
             f"自动日报：{auto_daily}\n"
             "隐私：所有样本只存在内存里，可用 /funbox清缓存 或 /funbox忘记我"
+        )
+
+    def _privacy_text(self) -> str:
+        return (
+            "FunBox 隐私说明：\n"
+            "1. 只缓存当前会话最近消息，用来生成菜单推荐、榜单、小档案和日报。\n"
+            "2. 默认不写数据库，重启 AstrBot 后内存样本会自然消失。\n"
+            "3. /funbox清缓存：清掉当前会话所有 FunBox 样本。\n"
+            "4. /funbox忘记我：只删除你在当前会话里的最近样本。\n"
+            "5. 榜单和小档案都是节目效果，不代表真实人格。"
         )
 
     def _clear_session_cache(self, event: AstrMessageEvent) -> tuple[int, int]:
@@ -758,6 +783,91 @@ class FunBoxPlugin(Star):
             )
         )
         return "\n".join(lines)
+
+    def _weather_reading(self, event: AstrMessageEvent) -> dict:
+        items = list(self.recent[self._session_key(event)])[-60:]
+        texts = [item.get("text", "") for item in items if item.get("text")]
+        joined = "\n".join(texts)
+        laugh = len(re.findall(r"哈|草|笑|乐|绷|hhh|233|蚌", joined, re.I))
+        question = joined.count("?") + joined.count("？")
+        exclaim = joined.count("!") + joined.count("！")
+        long_msgs = sum(1 for text in texts if len(text) >= 35)
+        abstract_score, _ = self._abstract_score(joined[:1000])
+
+        if len(texts) < 5:
+            weather = "刚开机小晴天"
+            temperature = "22°C"
+            wind = "微风，样本不足"
+            warning = "暂无预警"
+            advice = "再聊几句，我再开始认真胡说。"
+        elif laugh >= 6 or abstract_score >= 72:
+            weather = "局部发癫，多云转抽象"
+            temperature = f"{min(39, 24 + laugh + abstract_score // 18)}°C"
+            wind = "梗风偏强，容易把话题吹歪"
+            warning = "节目效果黄色预警"
+            advice = "适合 /名场面 或 /群聊榜单。"
+        elif question >= 6:
+            weather = "问号阵雨"
+            temperature = f"{24 + min(question, 8)}°C"
+            wind = "排障风，方向不稳定"
+            warning = "连续追问预警"
+            advice = "适合 /氛围雷达，把问号先收编。"
+        elif long_msgs >= 6:
+            weather = "长文低压槽"
+            temperature = "26°C"
+            wind = "认真输出风，偶有解释型强对流"
+            warning = "信息量偏高"
+            advice = "适合 /群聊热词 或 /群聊日报。"
+        elif exclaim >= 5:
+            weather = "能量热浪"
+            temperature = f"{28 + min(exclaim, 9)}°C"
+            wind = "感叹号南风"
+            warning = "情绪升温预警"
+            advice = "先喝水，再继续开麦。"
+        else:
+            weather = "稳定冒泡，晴间多云"
+            temperature = "25°C"
+            wind = "轻微路过风"
+            warning = "暂无明显异常"
+            advice = "适合 /今日人设 或 /赛博塔罗 起个轻梗。"
+
+        return {
+            "count": len(texts),
+            "laugh": laugh,
+            "question": question,
+            "exclaim": exclaim,
+            "long_msgs": long_msgs,
+            "abstract_score": abstract_score,
+            "weather": weather,
+            "temperature": temperature,
+            "wind": wind,
+            "warning": warning,
+            "advice": advice,
+        }
+
+    async def _weather_text(self, event: AstrMessageEvent) -> str:
+        reading = self._weather_reading(event)
+        fallback = (
+            f"群聊天气：{reading['weather']}\n"
+            f"温度：{reading['temperature']}\n"
+            f"风向：{reading['wind']}\n"
+            f"预警：{reading['warning']}\n"
+            f"建议：{reading['advice']}"
+        )
+        return await self._generate_with_context(
+            event,
+            task=(
+                "把最近群聊气氛写成一份有节目效果但不攻击人的天气预报。\n"
+                f"规则读数：样本 {reading['count']} 条，笑点 {reading['laugh']}，"
+                f"问号 {reading['question']}，感叹号 {reading['exclaim']}，"
+                f"长消息 {reading['long_msgs']}，抽象读数 {reading['abstract_score']}/100。\n"
+                f"规则天气：{reading['weather']}；温度：{reading['temperature']}；"
+                f"风向：{reading['wind']}；预警：{reading['warning']}；建议：{reading['advice']}\n"
+                "输出格式：群聊天气：xxx\n温度：xxx\n风向：xxx\n预警：xxx\n建议：xxx"
+            ),
+            fallback=fallback,
+            limit=620,
+        )
 
     def _update_profile(self, event: AstrMessageEvent, text: str) -> None:
         if not self.enable_profiles or not text:
@@ -1028,8 +1138,12 @@ class FunBoxPlugin(Star):
             reply = self._random_play_text(event)
         elif intent == "status":
             reply = self._status_text(event)
+        elif intent == "privacy":
+            reply = self._privacy_text()
         elif intent == "leaderboard":
             reply = self._leaderboard_text(event, text)
+        elif intent == "weather":
+            reply = await self._weather_text(event)
         elif intent == "clear_cache":
             recent_count, profile_count = self._clear_session_cache(event)
             reply = f"已清理当前会话 FunBox 缓存：消息 {recent_count} 条，小档案 {profile_count} 个。"
@@ -1073,6 +1187,11 @@ class FunBoxPlugin(Star):
         yield event.plain_result(self._status_text(event))
         event.stop_event()
 
+    @filter.command("funbox隐私", alias={"趣味隐私", "盒子隐私"})
+    async def funbox_privacy(self, event: AstrMessageEvent):
+        yield event.plain_result(self._privacy_text())
+        event.stop_event()
+
     @filter.command("funbox清缓存", alias={"趣味清缓存", "盒子清缓存"})
     async def funbox_clear_cache(self, event: AstrMessageEvent):
         recent_count, profile_count = self._clear_session_cache(event)
@@ -1095,6 +1214,11 @@ class FunBoxPlugin(Star):
         command = self._message_text(event).strip().split(maxsplit=1)[0].lstrip("/")
         arg = self._command_arg(event) or command
         yield event.plain_result(self._leaderboard_text(event, arg))
+        event.stop_event()
+
+    @filter.command("群聊天气", alias={"群聊气象", "聊天气象"})
+    async def group_weather(self, event: AstrMessageEvent):
+        yield event.plain_result(await self._weather_text(event))
         event.stop_event()
 
     @filter.command("今日人设", alias={"人设", "今日人格"})
