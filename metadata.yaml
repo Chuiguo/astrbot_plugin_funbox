@@ -11,6 +11,6 @@ help: |
   /抽象指数 [内容]
   /群聊热词
   也可以直接叫 bot 昵称：群里现在什么氛围？
-version: v0.5.0
+version: v0.6.0
 author: chuiguo+codex
 repo: local

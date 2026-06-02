@@ -21,6 +21,14 @@
 机器人昵称，我今天运势咋样？
 ```
 
+## 配置项
+
+- `enable_natural_reply`: 是否启用自然语言回复。
+- `only_when_addressed`: 是否仅在叫到 bot 名字时自然回复，默认开启，避免乱插嘴。
+- `extra_trigger_names`: 额外触发名，例如 `小雪`、`赛博盒子`。
+- `max_cache_messages`: 每个会话缓存消息数，默认 90。
+- `enable_llm`: 是否启用 LLM 上下文生成，关闭后只使用内置模板。
+
 ## 安装
 
 把插件目录放到 AstrBot 插件目录：

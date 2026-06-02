@@ -1,0 +1,32 @@
+{
+  "enable_natural_reply": {
+    "description": "启用自然语言回复",
+    "type": "bool",
+    "hint": "开启后，群聊里直接叫 bot 昵称也能触发 FunBox。",
+    "default": true
+  },
+  "only_when_addressed": {
+    "description": "仅在叫到 bot 名字时自然回复",
+    "type": "bool",
+    "hint": "建议开启，避免 bot 在群里乱插嘴。关闭后，明显的趣味请求也会触发，例如“我今天运势咋样”。",
+    "default": true
+  },
+  "extra_trigger_names": {
+    "description": "额外触发名",
+    "type": "list",
+    "hint": "除了 bot 昵称和 funbox/盒子/小盒外，也可以填自定义叫法，例如：小雪、赛博盒子。",
+    "default": []
+  },
+  "max_cache_messages": {
+    "description": "每个会话缓存消息数",
+    "type": "int",
+    "hint": "用于上下文生成。越大越能理解上下文，但会多占一点内存。",
+    "default": 90
+  },
+  "enable_llm": {
+    "description": "启用 LLM 上下文生成",
+    "type": "bool",
+    "hint": "关闭后只使用内置规则模板，不调用大模型。",
+    "default": true
+  }
+}

@@ -41,18 +41,56 @@ NATURAL_NAMES = ("funbox", "盒子", "小盒", "小盒子", "趣味盒")
     "astrbot_plugin_funbox",
     "chuiguo+codex",
     "安全轻量的群聊趣味工具箱：今日人设、赛博塔罗、氛围雷达、名场面",
-    "0.5.0",
+    "0.6.0",
     "local",
 )
 class FunBoxPlugin(Star):
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, config=None):
         super().__init__(context)
         self.context = context
-        self.recent = defaultdict(lambda: deque(maxlen=90))
+        self.config = config or {}
+        self.max_cache_messages = self._config_int("max_cache_messages", 90, minimum=20)
+        self.enable_natural_reply = self._config_bool("enable_natural_reply", True)
+        self.only_when_addressed = self._config_bool("only_when_addressed", True)
+        self.enable_llm = self._config_bool("enable_llm", True)
+        self.recent = defaultdict(lambda: deque(maxlen=self.max_cache_messages))
         self.bot_names = set(NATURAL_NAMES)
         self._bot_login_checked = False
+        for name in self._config_list("extra_trigger_names", []):
+            self._add_bot_name(name)
         self._load_context_bot_names()
         logger.info("FunBoxPlugin loaded")
+
+    def _config_get(self, key: str, default=None):
+        try:
+            if hasattr(self.config, "get"):
+                return self.config.get(key, default)
+        except Exception:
+            return default
+        return default
+
+    def _config_bool(self, key: str, default: bool) -> bool:
+        value = self._config_get(key, default)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on", "开启"}
+        return bool(value)
+
+    def _config_int(self, key: str, default: int, *, minimum: int = 1) -> int:
+        try:
+            value = int(self._config_get(key, default))
+        except Exception:
+            value = default
+        return max(value, minimum)
+
+    def _config_list(self, key: str, default: list[str]) -> list[str]:
+        value = self._config_get(key, default)
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        if isinstance(value, (list, tuple, set)):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return list(default)
 
     def _normalize_bot_name(self, name: object) -> str:
         return re.sub(r"\s+", "", str(name or "")).strip().lower()
@@ -182,6 +220,8 @@ class FunBoxPlugin(Star):
         fallback: str,
         limit: int = 520,
     ) -> str:
+        if not self.enable_llm:
+            return fallback
         provider = self._get_provider(event)
         if not provider:
             return fallback
@@ -321,6 +361,9 @@ class FunBoxPlugin(Star):
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def natural_funbox_chat(self, event: AstrMessageEvent):
+        if not self.enable_natural_reply:
+            return
+
         text = self._clean(self._message_text(event), limit=240)
         if not text or self._is_command_like(text) or self._is_self_message(event):
             return
@@ -328,6 +371,8 @@ class FunBoxPlugin(Star):
         await self._ensure_bot_names(event)
         intent = self._detect_intent(text)
         addressed = self._is_addressed(text)
+        if self.only_when_addressed and not addressed:
+            return
         if not addressed and not self._looks_like_fun_request(text, intent):
             return
 
