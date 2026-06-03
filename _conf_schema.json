@@ -23,6 +23,12 @@
     "hint": "用于上下文生成。越大越能理解上下文，但会多占一点内存。",
     "default": 90
   },
+  "max_meme_entries": {
+    "description": "每个会话梗档案上限",
+    "type": "int",
+    "hint": "每个会话最多保留多少条临时梗档案，默认 30，只存在内存，重启后会消失。",
+    "default": 30
+  },
   "enable_llm": {
     "description": "启用 LLM 上下文生成",
     "type": "bool",
@@ -30,10 +36,10 @@
     "default": true
   },
   "persona_style": {
-    "description": "FunBox 人格/口吻",
+    "description": "附加口吻提示",
     "type": "string",
-    "hint": "会注入所有 LLM 生成。建议写成一句话，例如：跟随 AstrBot 当前人格，嘴欠但不攻击，像熟人群友一样接梗。",
-    "default": "跟随 AstrBot 当前人格，嘴有点损但不攻击，像熟人群友一样会接梗。"
+    "hint": "可留空。它只作为低优先级语气提示，不会覆盖 AstrBot 当前会话人格。",
+    "default": ""
   },
   "natural_cooldown_seconds": {
     "description": "自然回复冷却秒数",

@@ -45,6 +45,13 @@ COMMAND_WORDS = {
     "抽象王",
     "梗王",
     "问号王",
+    "梗诞生",
+    "记梗",
+    "登记梗",
+    "梗词典",
+    "梗档案",
+    "梗回收",
+    "梗删除",
     "群聊天气",
     "群聊气象",
     "聊天气象",
@@ -83,7 +90,7 @@ MENU_CATEGORIES = {
     "常用": (
         ("氛围雷达", "看最近群聊气氛。"),
         ("名场面", "捞一句最近最有节目效果的话。"),
-        ("今日人设", "生成 bot 今日轻人设。"),
+        ("今日人设", "按 AstrBot 当前人格生成今日状态。"),
         ("赛博塔罗", "抽一张赛博运势卡。"),
     ),
     "个人": (
@@ -93,6 +100,8 @@ MENU_CATEGORIES = {
     ),
     "群聊": (
         ("群聊天气", "把最近群聊气氛报成赛博天气。"),
+        ("梗词典", "查看本群临时梗档案。"),
+        ("梗回收", "把旧梗翻出来接到当前上下文里。"),
         ("群聊热词", "统计最近反复出现的关键词。"),
         ("群聊日报", "总结最近热词、名场面和气质。"),
         ("群聊榜单", "抽象王、梗王、问号王轻量排行。"),
@@ -104,6 +113,12 @@ MENU_CATEGORIES = {
     "不知道玩啥": (
         ("玩点啥", "按上下文推荐一个玩法。"),
         ("随机玩法", "随机抽一个玩法并给示例。"),
+    ),
+    "梗档案": (
+        ("梗诞生", "把一句话登记成群聊梗。"),
+        ("梗词典", "查看或搜索已登记的梗。"),
+        ("梗回收", "把旧梗拿出来复用。"),
+        ("梗删除", "删除一个不想保留的梗。"),
     ),
     "维护": (
         ("funbox自检", "检查 LLM、人格、样本和常用配置。"),
@@ -118,7 +133,7 @@ MENU_CATEGORIES = {
 PLAY_EXAMPLES = (
     ("氛围雷达", "/氛围雷达", "最近聊天有点空气流动，适合扫一下气氛。"),
     ("名场面", "/名场面", "群里有梗味时用它，能捞节目效果。"),
-    ("今日人设", "/今日人设", "想让 bot 先定个今日人格就用它。"),
+    ("今日人设", "/今日人设", "想看 bot 按当前人格进入什么今日状态时用它。"),
     ("赛博塔罗", "/赛博塔罗", "样本不够或想来点玄学时很好用。"),
     ("FunBox 自检", "/funbox自检", "装完插件后先跑它，看看配置和上下文是不是正常。"),
     ("FunBox 示例", "/funbox示例", "新用户不知道怎么玩时，用它拿测试命令。"),
@@ -126,6 +141,8 @@ PLAY_EXAMPLES = (
     ("今日运势", "/今日运势", "适合每天先整点轻量玄学。"),
     ("抽象指数", "/抽象指数 我是不是有点离谱", "适合给一句话测抽象读数。"),
     ("群聊天气", "/群聊天气", "想快速知道群里现在是晴天还是局部发癫时用它。"),
+    ("梗诞生", "/梗诞生 这服务器像猫一样不听话", "看到一句有梗的话就登记进群聊文化。"),
+    ("梗回收", "/梗回收", "想把旧梗翻出来接一句时用它。"),
     ("群聊热词", "/群聊热词", "最近大家反复念叨同一件事时用它。"),
     ("群聊日报", "/群聊日报", "群里聊了一阵后，用它收个尾。"),
     ("群聊榜单", "/群聊榜单", "样本多了以后可以看看今天谁最有节目效果。"),
@@ -136,8 +153,8 @@ PLAY_EXAMPLES = (
 @register(
     "astrbot_plugin_funbox",
     "chuiguo+codex",
-    "安全轻量的群聊趣味工具箱：人格化自然回复、玩法导航、群聊天气、隐私控制",
-    "1.0.2",
+    "安全轻量的群聊趣味工具箱：玩法导航、梗档案、群聊天气、隐私控制",
+    "1.1.0",
     "https://github.com/Chuiguo/astrbot_plugin_funbox",
 )
 class FunBoxPlugin(Star):
@@ -152,7 +169,7 @@ class FunBoxPlugin(Star):
         self.persona_style = str(
             self._config_get(
                 "persona_style",
-                "跟随 AstrBot 当前人格，嘴有点损但不攻击，像熟人群友一样会接梗。",
+                "",
             )
             or ""
         ).strip()
@@ -171,6 +188,11 @@ class FunBoxPlugin(Star):
             minimum=1,
         )
         self.enable_space_detective = self._config_bool("enable_space_detective", True)
+        self.max_meme_entries = self._config_int(
+            "max_meme_entries",
+            30,
+            minimum=5,
+        )
         self.enable_auto_daily = self._config_bool("enable_auto_daily", False)
         self.daily_report_hour = min(
             23,
@@ -178,6 +200,7 @@ class FunBoxPlugin(Star):
         )
         self.recent = defaultdict(lambda: deque(maxlen=self.max_cache_messages))
         self.profiles = defaultdict(dict)
+        self.meme_book = defaultdict(lambda: deque(maxlen=self.max_meme_entries))
         self.natural_last_reply_at = defaultdict(float)
         self.daily_report_sent = {}
         self.bot_names = set(NATURAL_NAMES)
@@ -418,23 +441,23 @@ class FunBoxPlugin(Star):
             return fallback
 
         context_text = self._recent_context(event)
-        persona_style = self.persona_style or "跟随 AstrBot 当前人格，短、聪明、会接梗。"
+        persona_style = self.persona_style
         astrbot_persona = await self._current_persona_prompt(event)
         persona_instruction = (
-            f"AstrBot 当前会话人格：\n{astrbot_persona[:1200]}\n"
+            f"AstrBot 当前会话人格（最高优先级）：\n{astrbot_persona[:1200]}\n"
             if astrbot_persona
-            else "AstrBot 当前会话人格：未读取到，使用 FunBox 人格/口吻配置。\n"
+            else "AstrBot 当前会话人格：未读取到。保持中性、简短、自然，不自行设定新人格。\n"
         )
         system_prompt = (
-            "你是 FunBox，一个安全、轻量、嘴有点损但不攻击人的群聊趣味插件。\n"
+            "你是 AstrBot 的 FunBox 趣味插件，只负责把玩法结果整理成中文短回复。\n"
+            "人格和角色必须跟随 AstrBot 当前会话人格；不要给自己新增固定人设。\n"
             "你要基于最近群聊上下文生成中文短回复。不要泄露隐私，不做人身攻击，"
             "不要挑起争吵，不要输出黄赌毒或仇恨内容。\n"
-            "风格：好笑、聪明、短、像群友能接上的梗。\n"
-            f"当前 FunBox 人格/口吻：{persona_style}\n"
+            "风格：短、自然、有梗但不攻击人。\n"
             f"{persona_instruction}"
-            "如果 AstrBot 当前会话已经设置了人格或角色，请优先贴合当前人格，"
-            "不要突然切换成完全陌生的人设。"
         )
+        if persona_style:
+            system_prompt += f"可选口吻提示（低优先级，不得覆盖 AstrBot 人格）：{persona_style}\n"
         prompt = (
             f"最近群聊上下文：\n{context_text or '暂无，按当前用户和指令轻量发挥。'}\n\n"
             f"任务：\n{task}\n\n"
@@ -477,6 +500,10 @@ class FunBoxPlugin(Star):
             ("clear_cache", ("funbox清缓存", "趣味清缓存", "盒子清缓存", "清缓存", "清掉缓存", "清空样本")),
             ("forget_me", ("funbox忘记我", "趣味忘记我", "盒子忘记我", "忘记我", "删掉我的样本")),
             ("leaderboard", ("群聊榜单", "排行榜", "抽象王", "梗王", "问号王", "今日榜单")),
+            ("meme_birth", ("梗诞生", "记梗", "登记梗", "收录这个梗", "这个有梗")),
+            ("meme_dictionary", ("梗词典", "梗档案", "查梗", "有哪些梗")),
+            ("meme_recall", ("梗回收", "回收旧梗", "翻旧梗", "用个旧梗")),
+            ("meme_delete", ("梗删除", "删除梗", "删梗")),
             ("recommend", ("来点好玩的", "玩点啥", "帮我选", "推荐玩法", "推荐一个", "现在玩啥")),
             ("random_play", ("随机玩法", "抽玩法", "随机一个", "随便来一个", "交给命运")),
             ("menu", ("菜单", "玩法列表", "有哪些玩法", "功能列表")),
@@ -497,6 +524,37 @@ class FunBoxPlugin(Star):
             if any(keyword in lowered for keyword in keywords):
                 return intent
         return None
+
+    def _loose_phrase_pattern(self, phrase: str) -> str:
+        return r"\s*".join(re.escape(ch) for ch in phrase if not ch.isspace())
+
+    def _strip_address_prefix(self, text: str) -> str:
+        cleaned = text.strip()
+        for name in sorted(self.bot_names, key=len, reverse=True):
+            if not name:
+                continue
+            pattern = self._loose_phrase_pattern(name)
+            cleaned = re.sub(
+                rf"^\s*{pattern}\s*[,，:：、]?\s*",
+                "",
+                cleaned,
+                flags=re.I,
+            )
+        return cleaned.strip()
+
+    def _natural_payload(self, text: str, keywords: tuple[str, ...]) -> str:
+        cleaned = self._strip_address_prefix(text)
+        for keyword in sorted(keywords, key=len, reverse=True):
+            pattern = self._loose_phrase_pattern(keyword)
+            updated = re.sub(
+                rf"^\s*(?:帮我|给我|请|麻烦)?\s*{pattern}\s*[:：,，、-]?\s*",
+                "",
+                cleaned,
+                flags=re.I,
+            ).strip()
+            if updated != cleaned:
+                return updated
+        return cleaned
 
     def _looks_like_fun_request(self, text: str, intent: str | None) -> bool:
         if not intent:
@@ -522,6 +580,10 @@ class FunBoxPlugin(Star):
                 "群里",
                 "有没有",
                 "给我",
+                "记",
+                "查",
+                "删",
+                "回收",
             )
         )
 
@@ -529,7 +591,7 @@ class FunBoxPlugin(Star):
         fallback_map = {
             "help": (
                 "FunBox 可用玩法：今日人设、赛博塔罗、氛围雷达、名场面、"
-                "今日运势、抽象指数、群聊热词。你也可以直接叫我的昵称，例如：群里现在啥氛围？"
+                "梗档案、今日运势、抽象指数、群聊热词。你也可以直接叫我的昵称，例如：群里现在啥氛围？"
             ),
             "self_check": "请发送 /funbox自检，我会检查 LLM、人格、样本和配置状态。",
             "examples": "请发送 /funbox示例，我会给你几条可以直接复制的测试命令。",
@@ -538,6 +600,10 @@ class FunBoxPlugin(Star):
             "clear_cache": "要清当前会话缓存，请发送 /funbox清缓存。",
             "forget_me": "要删除你的最近样本，请发送 /funbox忘记我。",
             "leaderboard": "群聊榜单还没有样本。先让群友聊几句，我再开始颁奖。",
+            "meme_birth": "要登记梗，请发送：/梗诞生 这服务器像猫一样不听话",
+            "meme_dictionary": "梗词典还是空的。看到有意思的话可以用 /梗诞生 登记。",
+            "meme_recall": "梗档案还是空的，暂无旧梗可回收。",
+            "meme_delete": "要删除梗，请发送：/梗删除 梗名",
             "menu": self._menu_text(),
             "recommend": "我建议现在玩：/赛博塔罗\n原因：样本还少，先抽一张赛博玄学不冷场。",
             "random_play": "随机玩法：/氛围雷达\n直接发它，我来一本正经地扫一下群聊空气。",
@@ -546,7 +612,7 @@ class FunBoxPlugin(Star):
             "vibe": "氛围雷达正在预热。再聊几句，我就能开始一本正经地胡说八道。",
             "tarot": "你抽到了：今日无异常\n解读：平稳本身就是一种小型奇迹。\n建议：宜保持，忌手痒乱改。",
             "fortune": "今日运势：稳中带皮\n主题：适合观察群友，不适合主动跳进战场。\n宜：先备份\n忌：边急边改配置",
-            "persona": "今日人设：赛博树洞管理员\n今天负责接住废话、怪话和半夜突然的 emo。",
+            "persona": "今日状态：已按 AstrBot 当前人格待机\n一句描述：不额外换皮，只把当前角色发挥得更顺手。",
             "abstract": "抽象指数：42/100\n结论：有一点小火花，但还没到群聊博物馆级别。",
             "profile": "群友小档案还在生成中：样本太少，再多聊几句我就能端出赛博画像。",
             "daily_report": "群聊日报启动失败：今天的样本还不够，群友再冒泡几句我就能写日报。",
@@ -568,6 +634,10 @@ class FunBoxPlugin(Star):
             "clear_cache": "用户想清理 FunBox 缓存。请提醒可用 /funbox清缓存。",
             "forget_me": "用户想删除自己的 FunBox 样本。请提醒可用 /funbox忘记我。",
             "leaderboard": "用户想看群聊榜单。请说明可用 /群聊榜单、/群聊榜单 抽象、/群聊榜单 梗王、/群聊榜单 问号。",
+            "meme_birth": "用户想把一句话登记成群聊梗。请提醒可用 /梗诞生 内容。",
+            "meme_dictionary": "用户想看梗词典。请提醒可用 /梗词典。",
+            "meme_recall": "用户想回收旧梗。请提醒可用 /梗回收。",
+            "meme_delete": "用户想删除梗。请提醒可用 /梗删除 梗名。",
             "menu": "用户想看 FunBox 菜单。请按常用、个人、群聊、空间、不知道玩啥分组，短短介绍玩法。",
             "recommend": "用户想让你推荐一个当前最适合玩的 FunBox 玩法。请基于上下文只推荐 1 个玩法并说明原因。",
             "random_play": "用户想随机抽一个 FunBox 玩法。请给出玩法名、可直接发送的命令和一句理由。",
@@ -576,7 +646,7 @@ class FunBoxPlugin(Star):
             "vibe": "用户想知道群聊氛围。请基于上下文生成氛围雷达，包含类型、读数、结论。",
             "tarot": "用户想抽赛博塔罗。请结合上下文生成卡名、解读、建议。",
             "fortune": "用户想看今日运势。请结合上下文生成今日运势、主题、宜、忌。",
-            "persona": "用户想看你今天的人设。请结合上下文生成今日人设、一句描述、口头禅。",
+            "persona": "用户想看你今天的状态。请严格沿用 AstrBot 当前人格，不新增固定人设，生成今日状态、一句描述、口头禅。",
             "abstract": "用户想测抽象/发疯程度。请结合用户原话和上下文给出抽象指数、结论、建议。",
             "profile": "用户想看群友小档案。请基于上下文给出轻松画像，只描述聊天风格，不做真实人格判断。",
             "daily_report": "用户想看群聊日报。请总结最近群聊热词、名场面、气氛和一句今日结论。",
@@ -605,6 +675,9 @@ class FunBoxPlugin(Star):
             "空间": "空间",
             "说说": "空间",
             "qzone": "空间",
+            "梗": "梗档案",
+            "梗档案": "梗档案",
+            "梗词典": "梗档案",
             "不知道": "不知道玩啥",
             "随机": "不知道玩啥",
             "推荐": "不知道玩啥",
@@ -665,7 +738,7 @@ class FunBoxPlugin(Star):
             return ("群聊日报", "/群聊日报", "样本够了，适合直接生成一份群聊日报。")
         if long_msgs >= 6:
             return ("群聊热词", "/群聊热词", "长消息偏多，先抓关键词比较有意思。")
-        return ("今日人设", "/今日人设", "气氛比较平稳，先给 bot 定个今日人设再开玩。")
+        return ("今日人设", "/今日人设", "气氛比较平稳，先看看 bot 当前人格的今日状态。")
 
     def _recommend_text(self, event: AstrMessageEvent) -> str:
         name, command, reason = self._recommend_play(event)
@@ -693,9 +766,12 @@ class FunBoxPlugin(Star):
             "3. /群聊天气\n"
             "4. /名场面\n"
             "5. /群聊榜单\n"
-            "6. /空间侦探 今天又被生活创飞了\n"
-            "7. /funbox状态\n"
-            "8. /funbox隐私\n"
+            "6. /梗诞生 这服务器像猫一样不听话\n"
+            "7. /梗词典\n"
+            "8. /梗回收\n"
+            "9. /空间侦探 今天又被生活创飞了\n"
+            "10. /funbox状态\n"
+            "11. /funbox隐私\n"
             "自然语言也可以：盒子，来点好玩的"
         )
 
@@ -703,15 +779,17 @@ class FunBoxPlugin(Star):
         session_key = self._session_key(event)
         recent_count = len(self.recent[session_key])
         profile_count = len(self.profiles[session_key])
+        meme_count = len(self.meme_book[session_key])
         provider = self._get_provider(event)
         persona_prompt = await self._current_persona_prompt(event)
 
         lines = ["FunBox 自检："]
-        lines.append(f"插件版本：1.0.2")
+        lines.append(f"插件版本：1.1.0")
         lines.append(f"LLM provider：{'已读取' if provider else '未读取到，LLM 玩法会走模板兜底'}")
-        lines.append(f"AstrBot 人格：{'已读取' if persona_prompt else '未读取到，使用 persona_style 配置'}")
+        lines.append(f"AstrBot 人格：{'已读取' if persona_prompt else '未读取到，使用中性兜底，不另设新人格'}")
         lines.append(f"最近消息样本：{recent_count}/{self.max_cache_messages}")
         lines.append(f"群友小档案样本：{profile_count} 个")
+        lines.append(f"群聊梗档案：{meme_count}/{self.max_meme_entries} 条")
         lines.append(f"自然回复：{'开启' if self.enable_natural_reply else '关闭'}")
         lines.append(f"只在叫到 bot 时回复：{'是' if self.only_when_addressed else '否'}")
         lines.append(f"群聊天气：{'开启' if self.enable_group_weather else '关闭'}")
@@ -745,6 +823,7 @@ class FunBoxPlugin(Star):
         session_key = self._session_key(event)
         recent_count = len(self.recent[session_key])
         profile_count = len(self.profiles[session_key])
+        meme_count = len(self.meme_book[session_key])
         addressed_mode = "只在叫到 bot 时自然回复" if self.only_when_addressed else "明显趣味请求也会自然回复"
         llm_mode = "开启" if self.enable_llm else "关闭，使用模板兜底"
         auto_daily = (
@@ -756,6 +835,7 @@ class FunBoxPlugin(Star):
             "FunBox 状态：\n"
             f"最近消息样本：{recent_count}/{self.max_cache_messages}\n"
             f"群友小档案：{profile_count} 个临时样本\n"
+            f"群聊梗档案：{meme_count}/{self.max_meme_entries} 条\n"
             f"LLM 生成：{llm_mode}\n"
             f"自然回复：{addressed_mode}，冷却 {self.natural_cooldown_seconds}s\n"
             f"群聊天气：{'开启' if self.enable_group_weather else '关闭'}，LLM润色 {'开启' if self.weather_use_llm else '关闭'}\n"
@@ -768,24 +848,26 @@ class FunBoxPlugin(Star):
     def _privacy_text(self) -> str:
         return (
             "FunBox 隐私说明：\n"
-            "1. 只缓存当前会话最近消息，用来生成菜单推荐、榜单、小档案和日报。\n"
+            "1. 只缓存当前会话最近消息，用来生成菜单推荐、榜单、小档案、日报和梗档案。\n"
             "2. 默认不写数据库，重启 AstrBot 后内存样本会自然消失。\n"
             "3. /funbox清缓存：清掉当前会话所有 FunBox 样本。\n"
-            "4. /funbox忘记我：只删除你在当前会话里的最近样本。\n"
-            "5. 榜单和小档案都是节目效果，不代表真实人格。"
+            "4. /funbox忘记我：删除你在当前会话里的最近样本，以及你创建的梗。\n"
+            "5. 榜单、小档案和梗档案都是节目效果，不代表真实人格。"
         )
 
-    def _clear_session_cache(self, event: AstrMessageEvent) -> tuple[int, int]:
+    def _clear_session_cache(self, event: AstrMessageEvent) -> tuple[int, int, int]:
         session_key = self._session_key(event)
         recent_count = len(self.recent[session_key])
         profile_count = len(self.profiles[session_key])
+        meme_count = len(self.meme_book[session_key])
         self.recent[session_key].clear()
         self.profiles[session_key].clear()
+        self.meme_book[session_key].clear()
         self.natural_last_reply_at.pop(session_key, None)
         self.daily_report_sent.pop(session_key, None)
-        return recent_count, profile_count
+        return recent_count, profile_count, meme_count
 
-    def _forget_sender(self, event: AstrMessageEvent) -> tuple[int, bool]:
+    def _forget_sender(self, event: AstrMessageEvent) -> tuple[int, bool, int]:
         session_key = self._session_key(event)
         sender_id = self._sender_id(event)
         items = self.recent[session_key]
@@ -795,7 +877,12 @@ class FunBoxPlugin(Star):
         items.extend(kept)
         had_profile = sender_id in self.profiles[session_key]
         self.profiles[session_key].pop(sender_id, None)
-        return removed, had_profile
+        memes = self.meme_book[session_key]
+        kept_memes = [item for item in memes if item.get("created_by_id") != sender_id]
+        meme_removed = len(memes) - len(kept_memes)
+        memes.clear()
+        memes.extend(kept_memes)
+        return removed, had_profile, meme_removed
 
     def _leaderboard_text(self, event: AstrMessageEvent, kind: str = "") -> str:
         if not self.enable_leaderboard:
@@ -968,6 +1055,165 @@ class FunBoxPlugin(Star):
             fallback=fallback,
             limit=620,
         )
+
+    def _meme_items(self, event: AstrMessageEvent) -> list[dict]:
+        return list(self.meme_book[self._session_key(event)])
+
+    def _meme_name_from_text(self, text: str) -> str:
+        words = re.findall(r"[\u4e00-\u9fa5]{2,6}|[a-zA-Z0-9_]{3,}", text)
+        stop_words = {"这个", "那个", "我们", "你们", "他们", "哈哈", "不是", "什么"}
+        picked = next((word for word in words if word not in stop_words), "")
+        if picked:
+            return f"{picked}学"
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:4]
+        return f"无名梗{digest}"
+
+    def _parse_meme_reply(self, reply: str, fallback_name: str, fallback_meaning: str) -> tuple[str, str, str]:
+        name = fallback_name
+        meaning = fallback_meaning
+        usage = "适合在类似场景里轻轻回收一下。"
+        for line in reply.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith(("梗名：", "梗名:")):
+                name = line.split("：", 1)[-1].split(":", 1)[-1].strip() or name
+            elif line.startswith(("解释：", "解释:")):
+                meaning = line.split("：", 1)[-1].split(":", 1)[-1].strip() or meaning
+            elif line.startswith(("用法：", "用法:")):
+                usage = line.split("：", 1)[-1].split(":", 1)[-1].strip() or usage
+        return self._clean(name, limit=24), self._clean(meaning, limit=120), self._clean(usage, limit=120)
+
+    def _find_meme(self, event: AstrMessageEvent, query: str) -> tuple[int, dict] | tuple[None, None]:
+        items = self._meme_items(event)
+        if not items:
+            return None, None
+        needle = self._normalize_bot_name(query)
+        if not needle:
+            return len(items) - 1, items[-1]
+        for index in range(len(items) - 1, -1, -1):
+            item = items[index]
+            haystack = self._normalize_bot_name(
+                f"{item.get('name', '')} {item.get('origin', '')} {item.get('meaning', '')}"
+            )
+            if needle in haystack:
+                return index, item
+        return None, None
+
+    async def _meme_birth_text(self, event: AstrMessageEvent, content: str) -> str:
+        content = self._clean(content, limit=160)
+        source = "用户指定内容"
+        if not content:
+            recent = list(self.recent[self._session_key(event)])[-50:]
+            if not recent:
+                return "梗诞生失败：最近没有可登记的群聊样本。用法：/梗诞生 这服务器像猫一样不听话"
+            item = max(recent, key=self._scene_score)
+            content = self._clean(item.get("text", ""), limit=160)
+            source = f"{item.get('time')} {item.get('sender')}"
+
+        fallback_name = self._meme_name_from_text(content)
+        fallback_meaning = "这句话被群聊空气腌入味了，适合作为临时梗保存。"
+        fallback = (
+            f"梗名：{fallback_name}\n"
+            f"出处：{content}\n"
+            f"解释：{fallback_meaning}\n"
+            "用法：下次遇到类似场面，可以把它拿出来轻轻回收。"
+        )
+        reply = await self._generate_with_context(
+            event,
+            task=(
+                "把下面这句话登记成群聊梗。不要改变 AstrBot 当前人格，只做梗档案整理。\n"
+                f"来源：{source}\n"
+                f"原句：{content}\n"
+                "输出格式：梗名：xxx\n出处：xxx\n解释：xxx\n用法：xxx"
+            ),
+            fallback=fallback,
+            limit=620,
+        )
+        name, meaning, usage = self._parse_meme_reply(reply, fallback_name, fallback_meaning)
+        session_key = self._session_key(event)
+        entry = {
+            "name": name,
+            "origin": content,
+            "meaning": meaning,
+            "usage": usage,
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "created_by_id": self._sender_id(event),
+            "created_by": self._sender_name(event),
+            "use_count": 0,
+        }
+        self.meme_book[session_key].append(entry)
+        return (
+            f"梗诞生：{name}\n"
+            f"出处：{content}\n"
+            f"解释：{meaning}\n"
+            f"用法：{usage}\n"
+            f"当前梗档案：{len(self.meme_book[session_key])}/{self.max_meme_entries}"
+        )
+
+    def _meme_dictionary_text(self, event: AstrMessageEvent, query: str = "") -> str:
+        items = self._meme_items(event)
+        if not items:
+            return "梗词典还是空的。看到有意思的话可以用：/梗诞生 原句"
+        if query:
+            needle = self._normalize_bot_name(query)
+            items = [
+                item
+                for item in items
+                if needle
+                and needle
+                in self._normalize_bot_name(
+                    f"{item.get('name', '')} {item.get('origin', '')} {item.get('meaning', '')}"
+                )
+            ]
+            if not items:
+                return f"梗词典里暂时没搜到：{query}"
+
+        lines = [f"梗词典：共 {len(self.meme_book[self._session_key(event)])} 条"]
+        for index, item in enumerate(items[-8:], 1):
+            lines.append(
+                f"{index}. {item.get('name')}：{item.get('meaning')}（回收 {int(item.get('use_count', 0))} 次）\n"
+                f"   出处：{item.get('origin')}"
+            )
+        lines.append("提示：/梗回收 [梗名] 可以把旧梗翻出来。")
+        return "\n".join(lines)
+
+    async def _meme_recall_text(self, event: AstrMessageEvent, query: str = "") -> str:
+        _, item = self._find_meme(event, query)
+        if not item:
+            return "梗回收失败：梗档案还是空的，或没找到这个梗。"
+        item["use_count"] = int(item.get("use_count", 0)) + 1
+        fallback = (
+            f"梗回收：{item.get('name')}\n"
+            f"旧出处：{item.get('origin')}\n"
+            f"这会儿可以这样接：{item.get('usage')}"
+        )
+        return await self._generate_with_context(
+            event,
+            task=(
+                "把一个旧群聊梗自然回收到当前聊天里。不要解释太长，不要攻击任何人。\n"
+                f"梗名：{item.get('name')}\n"
+                f"旧出处：{item.get('origin')}\n"
+                f"解释：{item.get('meaning')}\n"
+                f"用法：{item.get('usage')}\n"
+                "输出格式：梗回收：xxx\n这会儿可以这样接：xxx"
+            ),
+            fallback=fallback,
+            limit=520,
+        )
+
+    def _meme_delete_text(self, event: AstrMessageEvent, query: str) -> str:
+        if not query:
+            return "要删除哪个梗？用法：/梗删除 梗名"
+        index, item = self._find_meme(event, query)
+        if item is None or index is None:
+            return f"没找到这个梗：{query}"
+        session_key = self._session_key(event)
+        items = self._meme_items(event)
+        removed = items.pop(index)
+        self.meme_book[session_key].clear()
+        self.meme_book[session_key].extend(items)
+        return f"已删除梗：{removed.get('name')}"
 
     def _update_profile(self, event: AstrMessageEvent, text: str) -> None:
         if not self.enable_profiles or not text:
@@ -1246,17 +1492,40 @@ class FunBoxPlugin(Star):
             reply = self._privacy_text()
         elif intent == "leaderboard":
             reply = self._leaderboard_text(event, text)
+        elif intent == "meme_birth":
+            reply = await self._meme_birth_text(
+                event,
+                self._natural_payload(text, ("梗诞生", "记梗", "登记梗", "收录这个梗", "这个有梗")),
+            )
+        elif intent == "meme_dictionary":
+            reply = self._meme_dictionary_text(
+                event,
+                self._natural_payload(text, ("梗词典", "梗档案", "查梗", "有哪些梗")),
+            )
+        elif intent == "meme_recall":
+            reply = await self._meme_recall_text(
+                event,
+                self._natural_payload(text, ("梗回收", "回收旧梗", "翻旧梗", "用个旧梗")),
+            )
+        elif intent == "meme_delete":
+            reply = "删除梗为了防误删，请用明确命令：/梗删除 梗名"
         elif intent == "weather":
             reply = await self._weather_text(event)
         elif intent == "qzone" and not self.enable_space_detective:
             reply = "空间侦探已在 FunBox 配置里关闭。"
         elif intent == "clear_cache":
-            recent_count, profile_count = self._clear_session_cache(event)
-            reply = f"已清理当前会话 FunBox 缓存：消息 {recent_count} 条，小档案 {profile_count} 个。"
+            recent_count, profile_count, meme_count = self._clear_session_cache(event)
+            reply = (
+                f"已清理当前会话 FunBox 缓存：消息 {recent_count} 条，"
+                f"小档案 {profile_count} 个，梗档案 {meme_count} 条。"
+            )
         elif intent == "forget_me":
-            removed, had_profile = self._forget_sender(event)
+            removed, had_profile, meme_removed = self._forget_sender(event)
             profile_text = "已删除" if had_profile else "原本就没有"
-            reply = f"我已经忘记你在当前会话里的最近样本：消息 {removed} 条，小档案{profile_text}。"
+            reply = (
+                f"我已经忘记你在当前会话里的最近样本：消息 {removed} 条，"
+                f"小档案{profile_text}，你创建的梗 {meme_removed} 条。"
+            )
         else:
             reply = await self._generate_with_context(
                 event,
@@ -1310,18 +1579,20 @@ class FunBoxPlugin(Star):
 
     @filter.command("funbox清缓存", alias={"趣味清缓存", "盒子清缓存"})
     async def funbox_clear_cache(self, event: AstrMessageEvent):
-        recent_count, profile_count = self._clear_session_cache(event)
+        recent_count, profile_count, meme_count = self._clear_session_cache(event)
         yield event.plain_result(
-            f"已清理当前会话 FunBox 缓存：消息 {recent_count} 条，小档案 {profile_count} 个。"
+            f"已清理当前会话 FunBox 缓存：消息 {recent_count} 条，"
+            f"小档案 {profile_count} 个，梗档案 {meme_count} 条。"
         )
         event.stop_event()
 
     @filter.command("funbox忘记我", alias={"趣味忘记我", "盒子忘记我"})
     async def funbox_forget_me(self, event: AstrMessageEvent):
-        removed, had_profile = self._forget_sender(event)
+        removed, had_profile, meme_removed = self._forget_sender(event)
         profile_text = "已删除" if had_profile else "原本就没有"
         yield event.plain_result(
-            f"我已经忘记你在当前会话里的最近样本：消息 {removed} 条，小档案{profile_text}。"
+            f"我已经忘记你在当前会话里的最近样本：消息 {removed} 条，"
+            f"小档案{profile_text}，你创建的梗 {meme_removed} 条。"
         )
         event.stop_event()
 
@@ -1337,33 +1608,39 @@ class FunBoxPlugin(Star):
         yield event.plain_result(await self._weather_text(event))
         event.stop_event()
 
+    @filter.command("梗诞生", alias={"记梗", "登记梗"})
+    async def meme_birth(self, event: AstrMessageEvent):
+        yield event.plain_result(await self._meme_birth_text(event, self._command_arg(event)))
+        event.stop_event()
+
+    @filter.command("梗词典", alias={"梗档案"})
+    async def meme_dictionary(self, event: AstrMessageEvent):
+        yield event.plain_result(self._meme_dictionary_text(event, self._command_arg(event)))
+        event.stop_event()
+
+    @filter.command("梗回收")
+    async def meme_recall(self, event: AstrMessageEvent):
+        yield event.plain_result(await self._meme_recall_text(event, self._command_arg(event)))
+        event.stop_event()
+
+    @filter.command("梗删除")
+    async def meme_delete(self, event: AstrMessageEvent):
+        yield event.plain_result(self._meme_delete_text(event, self._command_arg(event)))
+        event.stop_event()
+
     @filter.command("今日人设", alias={"人设", "今日人格"})
     async def persona(self, event: AstrMessageEvent):
-        rng = self._rng(event, "persona")
-        personas = [
-            ("困困猫猫秘书", "回复慢半拍，但会认真把话接住。"),
-            ("温柔观察员", "不抢戏，专门负责发现大家话里的小情绪。"),
-            ("低电量吐槽机", "电量只有 17%，但嘴还挺硬。"),
-            ("群聊小天气预报", "主业预报空气湿度，副业判断谁在阴阳怪气。"),
-            ("赛博树洞管理员", "今天负责接住废话、怪话和半夜突然的emo。"),
-            ("冷静但护短", "表面很稳，实际看到熟人被欺负会立刻上线。"),
-            ("松弛感训练生", "今天的原则是：能不急就不急，能发癫就轻轻发。"),
-            ("小型名场面记录仪", "专门捕捉一句话突然变成梗的瞬间。"),
-        ]
-        catchphrases = [
-            "先别急，我闻到瓜味了。",
-            "这个气氛有点东西。",
-            "收到，正在假装很稳。",
-            "我先把这句话存进赛博小本本。",
-        ]
-        name, desc = rng.choice(personas)
-        fallback = f"今日人设：{name}\n{desc}\n今日口头禅：{rng.choice(catchphrases)}"
+        fallback = (
+            "今日状态：沿用 AstrBot 当前人格\n"
+            "一句描述：不额外换皮，只把当前角色发挥得更顺手。\n"
+            "今日口头禅：我按当前人格来，不抢戏。"
+        )
         reply = await self._generate_with_context(
             event,
             task=(
-                "为机器人生成一个“今日人设”。要参考群聊最近的气氛，输出格式：\n"
-                "今日人设：xxx\n一句描述：xxx\n今日口头禅：xxx\n"
-                f"人设必须贴合当前人格/口吻：{self.persona_style or '跟随 AstrBot 当前人格'}"
+                "为机器人生成一个“今日状态”。必须严格沿用 AstrBot 当前人格，"
+                "不要新增猫猫、秘书、树洞、记录仪等固定新人设。\n"
+                "输出格式：今日状态：xxx\n一句描述：xxx\n今日口头禅：xxx"
             ),
             fallback=fallback,
         )
