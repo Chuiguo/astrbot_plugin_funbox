@@ -26,8 +26,26 @@
   "max_meme_entries": {
     "description": "每个会话梗档案上限",
     "type": "int",
-    "hint": "每个会话最多保留多少条临时梗档案，默认 30，只存在内存，重启后会消失。",
+    "hint": "每个会话最多恢复多少条梗档案到内存，默认 30。开启数据库后，梗档案会写入本地 SQLite。",
     "default": 30
+  },
+  "enable_meme_database": {
+    "description": "启用梗档案数据库",
+    "type": "bool",
+    "hint": "开启后，/梗诞生 会写入 FunBox 本地 SQLite，管理面板可浏览、搜索、删除，并可跨重启保留。",
+    "default": true
+  },
+  "dashboard_page_limit": {
+    "description": "面板默认加载条数",
+    "type": "int",
+    "hint": "管理面板一次默认加载多少条梗档案。默认 120，后端最多限制到 500。",
+    "default": 120
+  },
+  "dashboard_allow_clear_all": {
+    "description": "允许面板清空全部梗档案",
+    "type": "bool",
+    "hint": "默认关闭，避免误操作。关闭时，面板只能清理指定会话；开启后才允许一键清空全部梗档案。",
+    "default": false
   },
   "enable_llm": {
     "description": "启用 LLM 上下文生成",

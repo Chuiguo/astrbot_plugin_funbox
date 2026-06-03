@@ -5,11 +5,21 @@ from datetime import datetime
 import hashlib
 import random
 import re
+import sqlite3
 import time
+from pathlib import Path
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
+from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
+
+try:
+    from quart import jsonify as _quart_jsonify
+    from quart import request as _quart_request
+except Exception:
+    _quart_jsonify = None
+    _quart_request = None
 
 
 COMMAND_WORDS = {
@@ -150,11 +160,185 @@ PLAY_EXAMPLES = (
 )
 
 
+class FunBoxStore:
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
+
+    def initialize(self) -> None:
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS memes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_key TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    origin TEXT NOT NULL,
+                    meaning TEXT NOT NULL,
+                    usage TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    created_by_id TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    use_count INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_memes_session ON memes(session_key, id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_memes_creator ON memes(session_key, created_by_id)")
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    @staticmethod
+    def _row_to_meme(row: sqlite3.Row) -> dict:
+        return {
+            "id": row["id"],
+            "session_key": row["session_key"],
+            "name": row["name"],
+            "origin": row["origin"],
+            "meaning": row["meaning"],
+            "usage": row["usage"],
+            "created_at": row["created_at"],
+            "created_by_id": row["created_by_id"],
+            "created_by": row["created_by"],
+            "use_count": int(row["use_count"] or 0),
+            "updated_at": row["updated_at"],
+        }
+
+    def save_meme(self, session_key: str, entry: dict) -> int:
+        updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO memes (
+                    session_key, name, origin, meaning, usage,
+                    created_at, created_by_id, created_by, use_count, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_key,
+                    str(entry.get("name", "")),
+                    str(entry.get("origin", "")),
+                    str(entry.get("meaning", "")),
+                    str(entry.get("usage", "")),
+                    str(entry.get("created_at", "")),
+                    str(entry.get("created_by_id", "")),
+                    str(entry.get("created_by", "")),
+                    int(entry.get("use_count", 0) or 0),
+                    updated_at,
+                ),
+            )
+            return int(cur.lastrowid)
+
+    def load_recent(self, per_session_limit: int) -> dict[str, list[dict]]:
+        per_session_limit = max(1, int(per_session_limit or 1))
+        grouped: dict[str, list[dict]] = defaultdict(list)
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM memes ORDER BY session_key ASC, id DESC"
+            ).fetchall()
+        for row in rows:
+            item = self._row_to_meme(row)
+            session_items = grouped[item["session_key"]]
+            if len(session_items) < per_session_limit:
+                session_items.append(item)
+        for session_key, items in grouped.items():
+            grouped[session_key] = list(reversed(items))
+        return grouped
+
+    def list_memes(self, *, query: str = "", session_key: str = "", limit: int = 200) -> list[dict]:
+        clauses = []
+        params: list[object] = []
+        if session_key:
+            clauses.append("session_key = ?")
+            params.append(session_key)
+        if query:
+            like = f"%{query}%"
+            clauses.append("(name LIKE ? OR origin LIKE ? OR meaning LIKE ? OR usage LIKE ?)")
+            params.extend([like, like, like, like])
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(max(1, min(int(limit or 200), 500)))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM memes {where} ORDER BY id DESC LIMIT ?",
+                params,
+            ).fetchall()
+        return [self._row_to_meme(row) for row in rows]
+
+    def stats(self) -> dict:
+        with self._connect() as conn:
+            total = int(conn.execute("SELECT COUNT(*) FROM memes").fetchone()[0] or 0)
+            sessions = int(conn.execute("SELECT COUNT(DISTINCT session_key) FROM memes").fetchone()[0] or 0)
+            recalled = int(conn.execute("SELECT COALESCE(SUM(use_count), 0) FROM memes").fetchone()[0] or 0)
+            last_updated = conn.execute("SELECT MAX(updated_at) FROM memes").fetchone()[0] or ""
+            session_rows = conn.execute(
+                """
+                SELECT session_key, COUNT(*) AS count
+                FROM memes
+                GROUP BY session_key
+                ORDER BY count DESC, session_key ASC
+                LIMIT 50
+                """
+            ).fetchall()
+        db_size_bytes = self.db_path.stat().st_size if self.db_path.exists() else 0
+        return {
+            "total_memes": total,
+            "session_count": sessions,
+            "total_recalls": recalled,
+            "db_path": str(self.db_path),
+            "db_size_bytes": db_size_bytes,
+            "last_updated": str(last_updated),
+            "sessions": [
+                {"session_key": str(row["session_key"]), "count": int(row["count"] or 0)}
+                for row in session_rows
+            ],
+            "ready": self.db_path.exists(),
+        }
+
+    def increment_use_count(self, meme_id: int) -> None:
+        if not meme_id:
+            return
+        updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE memes SET use_count = use_count + 1, updated_at = ? WHERE id = ?",
+                (updated_at, int(meme_id)),
+            )
+
+    def delete_meme(self, meme_id: int) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM memes WHERE id = ?", (int(meme_id),)).fetchone()
+            if row is None:
+                return None
+            item = self._row_to_meme(row)
+            conn.execute("DELETE FROM memes WHERE id = ?", (int(meme_id),))
+            return item
+
+    def clear_memes(self, session_key: str = "") -> int:
+        with self._connect() as conn:
+            if session_key:
+                cur = conn.execute("DELETE FROM memes WHERE session_key = ?", (session_key,))
+            else:
+                cur = conn.execute("DELETE FROM memes")
+            return int(cur.rowcount or 0)
+
+    def delete_memes_by_sender(self, session_key: str, sender_id: str) -> int:
+        with self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM memes WHERE session_key = ? AND created_by_id = ?",
+                (session_key, sender_id),
+            )
+            return int(cur.rowcount or 0)
+
+
 @register(
     "astrbot_plugin_funbox",
     "chuiguo+codex",
-    "安全轻量的群聊趣味工具箱：玩法导航、梗档案、群聊天气、隐私控制",
-    "1.1.0",
+    "安全轻量的群聊趣味工具箱：管理面板、梗档案、群聊天气、隐私控制",
+    "1.2.0",
     "https://github.com/Chuiguo/astrbot_plugin_funbox",
 )
 class FunBoxPlugin(Star):
@@ -193,6 +377,13 @@ class FunBoxPlugin(Star):
             30,
             minimum=5,
         )
+        self.enable_meme_database = self._config_bool("enable_meme_database", True)
+        self.dashboard_page_limit = self._config_int(
+            "dashboard_page_limit",
+            120,
+            minimum=20,
+        )
+        self.dashboard_allow_clear_all = self._config_bool("dashboard_allow_clear_all", False)
         self.enable_auto_daily = self._config_bool("enable_auto_daily", False)
         self.daily_report_hour = min(
             23,
@@ -205,10 +396,60 @@ class FunBoxPlugin(Star):
         self.daily_report_sent = {}
         self.bot_names = set(NATURAL_NAMES)
         self._bot_login_checked = False
+        self.data_dir = Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_funbox"
+        self.db_path = self.data_dir / "funbox.db"
+        self.store = FunBoxStore(self.db_path)
+        self._db_ready = False
         for name in self._config_list("extra_trigger_names", []):
             self._add_bot_name(name)
         self._load_context_bot_names()
+        self._register_page_web_apis()
+        self._initialize_store()
         logger.info("FunBoxPlugin loaded")
+
+    async def initialize(self):
+        self._initialize_store()
+
+    def _initialize_store(self) -> None:
+        if not self.enable_meme_database:
+            self._db_ready = False
+            return
+        try:
+            self.store.initialize()
+            self._db_ready = True
+            self._restore_memes_from_db()
+        except Exception as e:
+            self._db_ready = False
+            logger.error(f"FunBox 数据库初始化失败: {e}")
+
+    def _restore_memes_from_db(self) -> None:
+        if not self._db_ready:
+            return
+        grouped = self.store.load_recent(self.max_meme_entries)
+        for session_key, items in grouped.items():
+            bucket = self.meme_book[session_key]
+            bucket.clear()
+            bucket.extend(items)
+
+    def _register_page_web_apis(self) -> None:
+        if not hasattr(self.context, "register_web_api"):
+            return
+        routes = (
+            ("page/status", self.page_status, ["GET"], "FunBox dashboard status"),
+            ("page/memes", self.page_memes, ["GET"], "FunBox dashboard memes"),
+            ("page/delete-meme", self.page_delete_meme, ["POST"], "FunBox dashboard delete meme"),
+            ("page/clear-memes", self.page_clear_memes, ["POST"], "FunBox dashboard clear memes"),
+        )
+        for endpoint, handler, methods, desc in routes:
+            try:
+                self.context.register_web_api(
+                    f"/astrbot_plugin_funbox/{endpoint}",
+                    handler,
+                    methods,
+                    desc,
+                )
+            except Exception as e:
+                logger.debug(f"FunBox 注册 Web API 失败 {endpoint}: {e}")
 
     def _config_get(self, key: str, default=None):
         try:
@@ -240,6 +481,180 @@ class FunBoxPlugin(Star):
         if isinstance(value, (list, tuple, set)):
             return [str(item).strip() for item in value if str(item).strip()]
         return list(default)
+
+    async def _page_response(self, payload: dict, status: int = 200):
+        if _quart_jsonify is None:
+            return payload
+        response = _quart_jsonify(payload)
+        response.status_code = status
+        return response
+
+    async def _page_json(self, callback):
+        try:
+            payload = await callback()
+            status = 200
+        except Exception as exc:
+            logger.exception("funbox page api failed: %s", exc)
+            payload = {
+                "ok": False,
+                "error": {"message": str(exc) or "请求失败"},
+            }
+            status = 400
+        return await self._page_response(payload, status)
+
+    async def _page_query_params(self) -> dict:
+        if _quart_request is None:
+            return {}
+        args = getattr(_quart_request, "args", {}) or {}
+        try:
+            return {str(key): value for key, value in args.items()}
+        except Exception:
+            return dict(args)
+
+    async def _page_json_body(self) -> dict:
+        if _quart_request is None:
+            return {}
+        try:
+            data = await _quart_request.get_json(silent=True)
+        except TypeError:
+            data = await _quart_request.get_json()
+        return data if isinstance(data, dict) else {}
+
+    def _memory_meme_count(self) -> int:
+        return sum(len(items) for items in self.meme_book.values())
+
+    def _drop_memory_meme_by_id(self, meme_id: int) -> dict | None:
+        for items in self.meme_book.values():
+            kept = []
+            removed = None
+            for item in items:
+                if int(item.get("id") or 0) == int(meme_id):
+                    removed = item
+                else:
+                    kept.append(item)
+            if removed is not None:
+                items.clear()
+                items.extend(kept)
+                return removed
+        return None
+
+    def _clear_memory_memes(self, session_key: str = "") -> int:
+        if session_key:
+            count = len(self.meme_book[session_key])
+            self.meme_book[session_key].clear()
+            return count
+        count = self._memory_meme_count()
+        for items in self.meme_book.values():
+            items.clear()
+        return count
+
+    async def _build_page_status(self) -> dict:
+        db_stats = self.store.stats() if self._db_ready else {
+            "total_memes": 0,
+            "session_count": 0,
+            "total_recalls": 0,
+            "db_path": str(self.db_path),
+            "db_size_bytes": 0,
+            "last_updated": "",
+            "sessions": [],
+            "ready": False,
+        }
+        return {
+            "ok": True,
+            "data": {
+                "version": "1.2.0",
+                "database": db_stats,
+                "memory": {
+                    "sessions": len(self.recent),
+                    "recent_messages": sum(len(items) for items in self.recent.values()),
+                    "profiles": sum(len(items) for items in self.profiles.values()),
+                    "memes": self._memory_meme_count(),
+                },
+                "config": {
+                    "enable_natural_reply": self.enable_natural_reply,
+                    "only_when_addressed": self.only_when_addressed,
+                    "enable_llm": self.enable_llm,
+                    "enable_group_weather": self.enable_group_weather,
+                    "weather_use_llm": self.weather_use_llm,
+                    "enable_leaderboard": self.enable_leaderboard,
+                    "enable_space_detective": self.enable_space_detective,
+                    "enable_auto_daily": self.enable_auto_daily,
+                    "enable_meme_database": self.enable_meme_database,
+                    "dashboard_page_limit": self.dashboard_page_limit,
+                    "dashboard_allow_clear_all": self.dashboard_allow_clear_all,
+                    "max_cache_messages": self.max_cache_messages,
+                    "max_meme_entries": self.max_meme_entries,
+                    "natural_cooldown_seconds": self.natural_cooldown_seconds,
+                },
+                "commands": [
+                    "/funbox自检",
+                    "/funbox状态",
+                    "/梗诞生 这服务器像猫一样不听话",
+                    "/梗词典",
+                    "/梗回收",
+                    "/群聊天气",
+                    "/玩点啥",
+                ],
+            },
+        }
+
+    async def page_status(self):
+        return await self._page_json(self._build_page_status)
+
+    async def page_memes(self):
+        async def handler():
+            params = await self._page_query_params()
+            query = str(params.get("q") or "").strip()
+            session_key = str(params.get("session_key") or "").strip()
+            limit = int(params.get("limit") or self.dashboard_page_limit)
+            items = self.store.list_memes(query=query, session_key=session_key, limit=limit) if self._db_ready else []
+            return {
+                "ok": True,
+                "data": {
+                    "items": items,
+                    "total": len(items),
+                    "query": query,
+                    "session_key": session_key,
+                },
+            }
+
+        return await self._page_json(handler)
+
+    async def page_delete_meme(self):
+        async def handler():
+            body = await self._page_json_body()
+            meme_id = int(body.get("id") or 0)
+            if meme_id <= 0:
+                raise ValueError("缺少梗 ID")
+            removed = self.store.delete_meme(meme_id) if self._db_ready else None
+            self._drop_memory_meme_by_id(meme_id)
+            return {
+                "ok": True,
+                "data": {
+                    "removed": removed,
+                },
+            }
+
+        return await self._page_json(handler)
+
+    async def page_clear_memes(self):
+        async def handler():
+            body = await self._page_json_body()
+            session_key = str(body.get("session_key") or "").strip()
+            if not session_key and not self.dashboard_allow_clear_all:
+                raise ValueError("面板未开启清空全部梗档案权限，请先填写会话或在配置中开启 dashboard_allow_clear_all")
+            db_removed = self.store.clear_memes(session_key) if self._db_ready else 0
+            memory_removed = self._clear_memory_memes(session_key)
+            return {
+                "ok": True,
+                "data": {
+                    "db_removed": db_removed,
+                    "memory_removed": memory_removed,
+                    "session_key": session_key,
+                },
+            }
+
+        return await self._page_json(handler)
 
     def _normalize_bot_name(self, name: object) -> str:
         return re.sub(r"\s+", "", str(name or "")).strip().lower()
@@ -596,7 +1011,7 @@ class FunBoxPlugin(Star):
             "self_check": "请发送 /funbox自检，我会检查 LLM、人格、样本和配置状态。",
             "examples": "请发送 /funbox示例，我会给你几条可以直接复制的测试命令。",
             "status": "FunBox 状态可以用 /funbox状态 查看。",
-            "privacy": "FunBox 只保留当前运行内存里的最近群聊样本，不写数据库；可用 /funbox清缓存 或 /funbox忘记我。",
+            "privacy": "FunBox 最近群聊样本只在内存里；梗档案默认写入本地 SQLite，可用 /funbox清缓存 或 /funbox忘记我 清理。",
             "clear_cache": "要清当前会话缓存，请发送 /funbox清缓存。",
             "forget_me": "要删除你的最近样本，请发送 /funbox忘记我。",
             "leaderboard": "群聊榜单还没有样本。先让群友聊几句，我再开始颁奖。",
@@ -630,7 +1045,7 @@ class FunBoxPlugin(Star):
             "self_check": "用户想让 FunBox 自检。请提醒可用 /funbox自检。",
             "examples": "用户想要 FunBox 测试示例。请提醒可用 /funbox示例。",
             "status": "用户想查看 FunBox 当前状态。请提醒可用 /funbox状态。",
-            "privacy": "用户想了解 FunBox 隐私说明。请简短说明只用内存样本、不写数据库、可清缓存和忘记我。",
+            "privacy": "用户想了解 FunBox 隐私说明。请简短说明最近消息和小档案只在内存里，梗档案默认写入本地 SQLite，可清缓存和忘记我。",
             "clear_cache": "用户想清理 FunBox 缓存。请提醒可用 /funbox清缓存。",
             "forget_me": "用户想删除自己的 FunBox 样本。请提醒可用 /funbox忘记我。",
             "leaderboard": "用户想看群聊榜单。请说明可用 /群聊榜单、/群聊榜单 抽象、/群聊榜单 梗王、/群聊榜单 问号。",
@@ -784,12 +1199,16 @@ class FunBoxPlugin(Star):
         persona_prompt = await self._current_persona_prompt(event)
 
         lines = ["FunBox 自检："]
-        lines.append(f"插件版本：1.1.0")
+        lines.append(f"插件版本：1.2.0")
         lines.append(f"LLM provider：{'已读取' if provider else '未读取到，LLM 玩法会走模板兜底'}")
         lines.append(f"AstrBot 人格：{'已读取' if persona_prompt else '未读取到，使用中性兜底，不另设新人格'}")
         lines.append(f"最近消息样本：{recent_count}/{self.max_cache_messages}")
         lines.append(f"群友小档案样本：{profile_count} 个")
         lines.append(f"群聊梗档案：{meme_count}/{self.max_meme_entries} 条")
+        if self.enable_meme_database:
+            lines.append(f"本地数据库：{'可用' if self._db_ready else '不可用'}")
+        else:
+            lines.append("本地数据库：已在配置里关闭")
         lines.append(f"自然回复：{'开启' if self.enable_natural_reply else '关闭'}")
         lines.append(f"只在叫到 bot 时回复：{'是' if self.only_when_addressed else '否'}")
         lines.append(f"群聊天气：{'开启' if self.enable_group_weather else '关闭'}")
@@ -831,6 +1250,12 @@ class FunBoxPlugin(Star):
             if self.enable_auto_daily
             else "关闭"
         )
+        if self.enable_meme_database:
+            db_mode = f"{'可用' if self._db_ready else '不可用'}，{self.db_path}"
+            privacy_tail = "梗档案会写入 FunBox 本地 SQLite，可用 /funbox清缓存 或 /funbox忘记我"
+        else:
+            db_mode = "已关闭，梗档案只保存在运行内存"
+            privacy_tail = "梗档案只在内存里，重启后会消失"
         return (
             "FunBox 状态：\n"
             f"最近消息样本：{recent_count}/{self.max_cache_messages}\n"
@@ -842,17 +1267,24 @@ class FunBoxPlugin(Star):
             f"群聊榜单：{'开启' if self.enable_leaderboard else '关闭'}，最低样本 {self.leaderboard_min_samples}\n"
             f"空间侦探：{'开启' if self.enable_space_detective else '关闭'}\n"
             f"自动日报：{auto_daily}\n"
-            "隐私：所有样本只存在内存里，可用 /funbox清缓存 或 /funbox忘记我"
+            f"数据库：{db_mode}\n"
+            f"隐私：最近消息只在内存里；{privacy_tail}"
         )
 
     def _privacy_text(self) -> str:
+        meme_store = (
+            "梗档案会写入 FunBox 本地 SQLite，方便管理面板查看和跨重启保留。"
+            if self.enable_meme_database
+            else "梗档案数据库已关闭，梗档案只保存在运行内存，重启后会消失。"
+        )
         return (
             "FunBox 隐私说明：\n"
             "1. 只缓存当前会话最近消息，用来生成菜单推荐、榜单、小档案、日报和梗档案。\n"
-            "2. 默认不写数据库，重启 AstrBot 后内存样本会自然消失。\n"
-            "3. /funbox清缓存：清掉当前会话所有 FunBox 样本。\n"
-            "4. /funbox忘记我：删除你在当前会话里的最近样本，以及你创建的梗。\n"
-            "5. 榜单、小档案和梗档案都是节目效果，不代表真实人格。"
+            "2. 最近消息和小档案不写数据库，重启 AstrBot 后会自然消失。\n"
+            f"3. {meme_store}\n"
+            "4. /funbox清缓存：清掉当前会话所有 FunBox 样本和梗档案。\n"
+            "5. /funbox忘记我：删除你在当前会话里的最近样本，以及你创建的梗。\n"
+            "6. 榜单、小档案和梗档案都是节目效果，不代表真实人格。"
         )
 
     def _clear_session_cache(self, event: AstrMessageEvent) -> tuple[int, int, int]:
@@ -863,6 +1295,8 @@ class FunBoxPlugin(Star):
         self.recent[session_key].clear()
         self.profiles[session_key].clear()
         self.meme_book[session_key].clear()
+        if self._db_ready:
+            meme_count = max(meme_count, self.store.clear_memes(session_key))
         self.natural_last_reply_at.pop(session_key, None)
         self.daily_report_sent.pop(session_key, None)
         return recent_count, profile_count, meme_count
@@ -882,6 +1316,8 @@ class FunBoxPlugin(Star):
         meme_removed = len(memes) - len(kept_memes)
         memes.clear()
         memes.extend(kept_memes)
+        if self._db_ready:
+            meme_removed = max(meme_removed, self.store.delete_memes_by_sender(session_key, sender_id))
         return removed, had_profile, meme_removed
 
     def _leaderboard_text(self, event: AstrMessageEvent, kind: str = "") -> str:
@@ -1142,6 +1578,11 @@ class FunBoxPlugin(Star):
             "created_by": self._sender_name(event),
             "use_count": 0,
         }
+        if self._db_ready:
+            try:
+                entry["id"] = self.store.save_meme(session_key, entry)
+            except Exception as e:
+                logger.warning(f"FunBox 保存梗档案失败: {e}")
         self.meme_book[session_key].append(entry)
         return (
             f"梗诞生：{name}\n"
@@ -1183,6 +1624,11 @@ class FunBoxPlugin(Star):
         if not item:
             return "梗回收失败：梗档案还是空的，或没找到这个梗。"
         item["use_count"] = int(item.get("use_count", 0)) + 1
+        if self._db_ready:
+            try:
+                self.store.increment_use_count(int(item.get("id") or 0))
+            except Exception as e:
+                logger.debug(f"FunBox 更新梗使用次数失败: {e}")
         fallback = (
             f"梗回收：{item.get('name')}\n"
             f"旧出处：{item.get('origin')}\n"
@@ -1211,6 +1657,11 @@ class FunBoxPlugin(Star):
         session_key = self._session_key(event)
         items = self._meme_items(event)
         removed = items.pop(index)
+        if self._db_ready:
+            try:
+                self.store.delete_meme(int(removed.get("id") or 0))
+            except Exception as e:
+                logger.debug(f"FunBox 删除梗档案失败: {e}")
         self.meme_book[session_key].clear()
         self.meme_book[session_key].extend(items)
         return f"已删除梗：{removed.get('name')}"
