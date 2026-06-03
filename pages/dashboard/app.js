@@ -5,6 +5,8 @@ const state = {
   activeSection: "overview",
   status: null,
   memes: [],
+  usage: null,
+  timeline: [],
   loading: false,
 };
 
@@ -52,9 +54,13 @@ const el = {
   refreshButton: document.getElementById("refreshButton"),
   loadAllMemesButton: document.getElementById("loadAllMemesButton"),
   reloadMemesButton: document.getElementById("reloadMemesButton"),
+  reloadUsageButton: document.getElementById("reloadUsageButton"),
+  reloadTimelineButton: document.getElementById("reloadTimelineButton"),
   memeSearchForm: document.getElementById("memeSearchForm"),
+  timelineFilterForm: document.getElementById("timelineFilterForm"),
   memeQuery: document.getElementById("memeQuery"),
   sessionFilter: document.getElementById("sessionFilter"),
+  timelineSessionFilter: document.getElementById("timelineSessionFilter"),
   clearSessionKey: document.getElementById("clearSessionKey"),
   clearSessionButton: document.getElementById("clearSessionButton"),
   clearAllButton: document.getElementById("clearAllButton"),
@@ -64,6 +70,10 @@ const el = {
   scopeList: document.getElementById("scopeList"),
   memeList: document.getElementById("memeList"),
   memeMeta: document.getElementById("memeMeta"),
+  usageBoard: document.getElementById("usageBoard"),
+  recentUsage: document.getElementById("recentUsage"),
+  timelineList: document.getElementById("timelineList"),
+  timelineMeta: document.getElementById("timelineMeta"),
   commandGrid: document.getElementById("commandGrid"),
   quickActions: document.getElementById("quickActions"),
   sidebarDbState: document.getElementById("sidebarDbState"),
@@ -199,6 +209,8 @@ function switchSection(section) {
     overview: "系统总览",
     memes: "梗档案",
     commands: "指令库",
+    usage: "玩法热度",
+    timeline: "记忆线",
     maintenance: "数据维护",
   };
   el.sectionTitle.textContent = titles[section] || "FunBox";
@@ -210,6 +222,12 @@ function switchSection(section) {
   }
   if (section === "memes" && !state.memes.length) {
     loadMemes().catch((error) => setNotice(error.message || "梗档案加载失败", "error"));
+  }
+  if (section === "usage" && !state.usage) {
+    loadUsage().catch((error) => setNotice(error.message || "玩法热度加载失败", "error"));
+  }
+  if (section === "timeline" && !state.timeline.length) {
+    loadTimeline().catch((error) => setNotice(error.message || "记忆线加载失败", "error"));
   }
 }
 
@@ -248,7 +266,9 @@ function renderStatus() {
   el.metricGrid.innerHTML = [
     metricCard({ label: "梗档案", value: text(database.total_memes || 0), hint: "SQLite 已收录", tone: "violet" }),
     metricCard({ label: "会话索引", value: text(database.session_count || 0), hint: "存在梗档案的会话", tone: "blue" }),
-    metricCard({ label: "近期样本", value: text(memory.recent_messages || 0), hint: `${memory.sessions || 0} 个会话在内存`, tone: "rose" }),
+    metricCard({ label: "玩法次数", value: text(database.total_plays || 0), hint: "已记录的 FunBox 触发", tone: "rose" }),
+    metricCard({ label: "记忆事件", value: text(database.total_meme_events || 0), hint: "梗诞生、回收、删除", tone: "blue" }),
+    metricCard({ label: "近期样本", value: text(memory.recent_messages || 0), hint: `${memory.sessions || 0} 个会话在内存`, tone: "violet" }),
     metricCard({ label: "数据库", value: ready ? "就绪" : "未就绪", hint: formatBytes(database.db_size_bytes), tone: ready ? "green" : "amber" }),
   ].join("");
 
@@ -261,6 +281,7 @@ function renderStatus() {
     configRow("自动日报", yesNo(config.enable_auto_daily), "到点后群里首次发言触发"),
     configRow("梗档案数据库", yesNo(config.enable_meme_database), `每会话上限 ${config.max_meme_entries || 0}`),
     configRow("面板查询", `${config.dashboard_page_limit || 120} 条`, config.dashboard_allow_clear_all ? "允许面板清空全部" : "默认禁止清空全部"),
+    configRow("玩法热度统计", yesNo(config.enable_usage_stats), `记忆线 ${config.dashboard_timeline_limit || 80} 条`),
   ].join("");
 
   const sessions = Array.isArray(database.sessions) ? database.sessions : [];
@@ -323,6 +344,99 @@ function renderMemes() {
   `).join("");
 }
 
+function eventTypeLabel(value) {
+  const labels = {
+    birth: "诞生",
+    recall: "回收",
+    delete: "删除",
+  };
+  return labels[value] || value || "事件";
+}
+
+function renderUsage() {
+  const usage = state.usage || { total_plays: 0, top_commands: [], recent: [] };
+  const top = Array.isArray(usage.top_commands) ? usage.top_commands : [];
+  const recent = Array.isArray(usage.recent) ? usage.recent : [];
+
+  if (!top.length) {
+    el.usageBoard.innerHTML = `
+      <div class="empty-state tall">
+        <strong>玩法热度还没开始升温</strong>
+        <span>群里触发几次 FunBox 后，这里会出现排行。</span>
+      </div>
+    `;
+  } else {
+    el.usageBoard.innerHTML = `
+      <div class="board-title">
+        <strong>总触发 ${escapeHtml(usage.total_plays || 0)} 次</strong>
+        <span>按玩法累计排行</span>
+      </div>
+      ${top.map((item, index) => `
+        <div class="usage-row">
+          <span class="rank">${index + 1}</span>
+          <div>
+            <strong>${escapeHtml(item.command_key)}</strong>
+            <small>最近使用：${escapeHtml(item.last_used || "-")}</small>
+          </div>
+          <b>${escapeHtml(item.count)} 次</b>
+        </div>
+      `).join("")}
+    `;
+  }
+
+  if (!recent.length) {
+    el.recentUsage.innerHTML = `
+      <div class="empty-state tall">
+        <strong>暂无最近触发</strong>
+        <span>自然语言触发和斜杠命令都会被记录。</span>
+      </div>
+    `;
+    return;
+  }
+
+  el.recentUsage.innerHTML = `
+    <div class="board-title">
+      <strong>最近触发</strong>
+      <span>用于排查哪些玩法真的有人用</span>
+    </div>
+    ${recent.map((item) => `
+      <div class="recent-row">
+        <strong>${escapeHtml(item.command_key)}</strong>
+        <span>${escapeHtml(item.sender_name || item.sender_id || "-")} · ${escapeHtml(item.created_at || "-")}</span>
+        <small>${escapeHtml(item.raw_text || "")}</small>
+      </div>
+    `).join("")}
+  `;
+}
+
+function renderTimeline() {
+  const items = state.timeline;
+  el.timelineMeta.textContent = items.length ? `已加载 ${items.length} 条事件` : "暂无记忆事件";
+  if (!items.length) {
+    el.timelineList.innerHTML = `
+      <div class="empty-state tall">
+        <strong>记忆线还是空的</strong>
+        <span>登记、回收或删除梗之后，这里会出现时间线。</span>
+      </div>
+    `;
+    return;
+  }
+
+  el.timelineList.innerHTML = items.map((item) => `
+    <article class="timeline-item ${escapeHtml(item.event_type || "")}">
+      <div class="timeline-dot"></div>
+      <div class="timeline-body">
+        <div class="timeline-head">
+          <strong>${escapeHtml(eventTypeLabel(item.event_type))}：${escapeHtml(item.meme_name || "未命名梗")}</strong>
+          <span>${escapeHtml(item.created_at || "-")}</span>
+        </div>
+        <p>${escapeHtml(item.note || "-")}</p>
+        <small>${escapeHtml(item.actor_name || item.actor_id || "-")} · ${escapeHtml(item.session_key || "-")}</small>
+      </div>
+    </article>
+  `).join("");
+}
+
 function renderCommands() {
   el.commandGrid.innerHTML = commandGroups.map((group) => `
     <article class="command-card">
@@ -376,11 +490,33 @@ async function loadMemes() {
   state.loading = false;
 }
 
+async function loadUsage() {
+  const data = await apiGet("page/play-usage", { limit: 18 });
+  state.usage = data;
+  renderUsage();
+}
+
+async function loadTimeline() {
+  el.timelineMeta.textContent = "正在加载记忆线";
+  const data = await apiGet("page/meme-events", {
+    session_key: el.timelineSessionFilter.value.trim(),
+    limit: state.status?.config?.dashboard_timeline_limit || 80,
+  });
+  state.timeline = Array.isArray(data.items) ? data.items : [];
+  renderTimeline();
+}
+
 async function refreshAll() {
   try {
     await loadStatus();
     if (state.activeSection === "memes") {
       await loadMemes();
+    }
+    if (state.activeSection === "usage") {
+      await loadUsage();
+    }
+    if (state.activeSection === "timeline") {
+      await loadTimeline();
     }
     setNotice("状态已刷新。", "success");
   } catch (error) {
@@ -398,6 +534,9 @@ async function deleteMeme(id) {
   state.memes = state.memes.filter((meme) => String(meme.id) !== String(id));
   renderMemes();
   await loadStatus();
+  if (state.activeSection === "timeline") {
+    await loadTimeline();
+  }
   setNotice(`已删除 ${label}。`, "success");
 }
 
@@ -416,6 +555,7 @@ async function clearMemes(sessionKey) {
   const data = await apiPost("page/clear-memes", { session_key: target });
   await loadStatus();
   await loadMemes();
+  await loadTimeline();
   setNotice(`已清理数据库 ${data.db_removed || 0} 条，内存 ${data.memory_removed || 0} 条。`, "success");
 }
 
@@ -426,6 +566,8 @@ function bindEvents() {
 
   el.refreshButton.addEventListener("click", () => refreshAll());
   el.reloadMemesButton.addEventListener("click", () => loadMemes().catch((error) => setNotice(error.message || "加载失败", "error")));
+  el.reloadUsageButton.addEventListener("click", () => loadUsage().catch((error) => setNotice(error.message || "加载失败", "error")));
+  el.reloadTimelineButton.addEventListener("click", () => loadTimeline().catch((error) => setNotice(error.message || "加载失败", "error")));
   el.loadAllMemesButton.addEventListener("click", async () => {
     el.memeQuery.value = "";
     el.sessionFilter.value = "";
@@ -443,10 +585,21 @@ function bindEvents() {
     }
   });
 
+  el.timelineFilterForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await loadTimeline();
+      setNotice("记忆线筛选完成。", "success");
+    } catch (error) {
+      setNotice(error.message || "筛选失败", "error");
+    }
+  });
+
   el.scopeList.addEventListener("click", async (event) => {
     const button = event.target.closest(".scope-chip");
     if (!button) return;
     el.sessionFilter.value = button.dataset.session || "";
+    el.timelineSessionFilter.value = button.dataset.session || "";
     switchSection("memes");
     await loadMemes();
   });

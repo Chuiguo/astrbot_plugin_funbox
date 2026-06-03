@@ -394,7 +394,7 @@ h3 {
 
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 18px;
   margin-bottom: 28px;
 }
@@ -593,6 +593,11 @@ h3 {
   width: min(100%, 760px);
 }
 
+.compact-form {
+  grid-template-columns: minmax(220px, 1fr) auto;
+  width: min(100%, 520px);
+}
+
 .archive-toolbar {
   position: relative;
   z-index: 1;
@@ -730,6 +735,162 @@ h3 {
   margin-top: 18px;
 }
 
+.usage-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.9fr);
+  gap: 18px;
+}
+
+.usage-board,
+.recent-board {
+  display: grid;
+  gap: 12px;
+}
+
+.board-title {
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.board-title strong,
+.board-title span {
+  display: block;
+}
+
+.board-title span {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.usage-row,
+.recent-row {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.usage-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 13px;
+}
+
+.usage-row .rank {
+  width: 35px;
+  height: 35px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: #ffffff;
+  font-weight: 950;
+  background: linear-gradient(135deg, var(--violet), var(--blue));
+}
+
+.usage-row small,
+.recent-row span,
+.recent-row small {
+  display: block;
+  color: var(--muted);
+}
+
+.usage-row b {
+  color: var(--green);
+}
+
+.recent-row {
+  display: grid;
+  gap: 5px;
+  padding: 14px;
+}
+
+.recent-row small {
+  overflow-wrap: anywhere;
+}
+
+.timeline-list {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 0;
+}
+
+.timeline-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 14px;
+  padding: 0 0 18px;
+}
+
+.timeline-item::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 22px;
+  bottom: 0;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.timeline-item:last-child::before {
+  display: none;
+}
+
+.timeline-dot {
+  width: 22px;
+  height: 22px;
+  margin-top: 13px;
+  border-radius: 999px;
+  background: var(--blue);
+  box-shadow: 0 0 0 6px rgba(72, 160, 255, 0.14);
+}
+
+.timeline-item.birth .timeline-dot {
+  background: var(--green);
+  box-shadow: 0 0 0 6px rgba(84, 211, 104, 0.14);
+}
+
+.timeline-item.recall .timeline-dot {
+  background: var(--violet);
+  box-shadow: 0 0 0 6px rgba(140, 98, 255, 0.14);
+}
+
+.timeline-item.delete .timeline-dot {
+  background: var(--danger);
+  box-shadow: 0 0 0 6px rgba(255, 102, 120, 0.14);
+}
+
+.timeline-body {
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.timeline-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+}
+
+.timeline-head span,
+.timeline-body small {
+  color: var(--muted);
+}
+
+.timeline-body p {
+  margin-bottom: 9px;
+  line-height: 1.7;
+  color: #eeeafb;
+}
+
 .field-label {
   position: relative;
   z-index: 1;
@@ -780,7 +941,8 @@ h3 {
 
   .metric-grid,
   .split-grid,
-  .command-grid {
+  .command-grid,
+  .usage-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -801,6 +963,7 @@ h3 {
   .metric-grid,
   .split-grid,
   .command-grid,
+  .usage-grid,
   .meme-detail,
   .search-form,
   .config-row {
@@ -819,5 +982,9 @@ h3 {
   .danger-actions > *,
   .top-actions > * {
     flex: 1;
+  }
+
+  .timeline-head {
+    flex-direction: column;
   }
 }

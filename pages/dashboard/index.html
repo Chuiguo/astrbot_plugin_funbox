@@ -30,8 +30,16 @@
             <span class="nav-icon">03</span>
             <span>指令库</span>
           </button>
-          <button class="nav-item" type="button" data-section="maintenance">
+          <button class="nav-item" type="button" data-section="usage">
             <span class="nav-icon">04</span>
+            <span>玩法热度</span>
+          </button>
+          <button class="nav-item" type="button" data-section="timeline">
+            <span class="nav-icon">05</span>
+            <span>记忆线</span>
+          </button>
+          <button class="nav-item" type="button" data-section="maintenance">
+            <span class="nav-icon">06</span>
             <span>数据维护</span>
           </button>
         </nav>
@@ -116,6 +124,42 @@
               <span class="mini-badge">点击复制</span>
             </div>
             <div class="command-grid" id="commandGrid"></div>
+          </article>
+        </section>
+
+        <section class="panel-section" id="usage" aria-label="玩法热度">
+          <article class="panel-card full-card">
+            <div class="panel-heading">
+              <div>
+                <span class="eyebrow">Signals</span>
+                <h2>玩法热度统计</h2>
+              </div>
+              <button class="ghost-button compact" id="reloadUsageButton" type="button">重新加载</button>
+            </div>
+            <div class="usage-grid">
+              <div class="usage-board" id="usageBoard"></div>
+              <div class="recent-board" id="recentUsage"></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel-section" id="timeline" aria-label="记忆线">
+          <article class="panel-card full-card">
+            <div class="panel-heading wide-heading">
+              <div>
+                <span class="eyebrow">Memory Line</span>
+                <h2>梗档案记忆线</h2>
+              </div>
+              <form class="search-form compact-form" id="timelineFilterForm">
+                <input id="timelineSessionFilter" autocomplete="off" placeholder="会话 key，可留空" />
+                <button class="primary-button" type="submit">筛选</button>
+              </form>
+            </div>
+            <div class="archive-toolbar">
+              <span id="timelineMeta">等待加载</span>
+              <button class="ghost-button compact" id="reloadTimelineButton" type="button">重新加载</button>
+            </div>
+            <div class="timeline-list" id="timelineList"></div>
           </article>
         </section>
 

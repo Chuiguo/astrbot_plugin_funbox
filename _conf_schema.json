@@ -47,6 +47,18 @@
     "hint": "默认关闭，避免误操作。关闭时，面板只能清理指定会话；开启后才允许一键清空全部梗档案。",
     "default": false
   },
+  "enable_usage_stats": {
+    "description": "启用玩法热度统计",
+    "type": "bool",
+    "hint": "开启后，FunBox 会记录群聊里触发过哪些玩法，用于管理面板展示热度排行。不会记录普通聊天内容。",
+    "default": true
+  },
+  "dashboard_timeline_limit": {
+    "description": "面板记忆线加载条数",
+    "type": "int",
+    "hint": "管理面板默认加载多少条梗事件记录，包含梗诞生、回收、删除。默认 80。",
+    "default": 80
+  },
   "enable_llm": {
     "description": "启用 LLM 上下文生成",
     "type": "bool",

@@ -186,6 +186,38 @@ class FunBoxStore:
             )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_memes_session ON memes(session_key, id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_memes_creator ON memes(session_key, created_by_id)")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS play_usage (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_key TEXT NOT NULL,
+                    command_key TEXT NOT NULL,
+                    raw_text TEXT NOT NULL,
+                    sender_id TEXT NOT NULL,
+                    sender_name TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS meme_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    meme_id INTEGER NOT NULL DEFAULT 0,
+                    session_key TEXT NOT NULL,
+                    meme_name TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    actor_id TEXT NOT NULL,
+                    actor_name TEXT NOT NULL,
+                    note TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_play_usage_command ON play_usage(command_key, id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_play_usage_session ON play_usage(session_key, id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_meme_events_session ON meme_events(session_key, id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_meme_events_meme ON meme_events(meme_id, id)")
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -273,6 +305,8 @@ class FunBoxStore:
             total = int(conn.execute("SELECT COUNT(*) FROM memes").fetchone()[0] or 0)
             sessions = int(conn.execute("SELECT COUNT(DISTINCT session_key) FROM memes").fetchone()[0] or 0)
             recalled = int(conn.execute("SELECT COALESCE(SUM(use_count), 0) FROM memes").fetchone()[0] or 0)
+            events = int(conn.execute("SELECT COUNT(*) FROM meme_events").fetchone()[0] or 0)
+            plays = int(conn.execute("SELECT COUNT(*) FROM play_usage").fetchone()[0] or 0)
             last_updated = conn.execute("SELECT MAX(updated_at) FROM memes").fetchone()[0] or ""
             session_rows = conn.execute(
                 """
@@ -288,6 +322,8 @@ class FunBoxStore:
             "total_memes": total,
             "session_count": sessions,
             "total_recalls": recalled,
+            "total_meme_events": events,
+            "total_plays": plays,
             "db_path": str(self.db_path),
             "db_size_bytes": db_size_bytes,
             "last_updated": str(last_updated),
@@ -321,24 +357,172 @@ class FunBoxStore:
         with self._connect() as conn:
             if session_key:
                 cur = conn.execute("DELETE FROM memes WHERE session_key = ?", (session_key,))
+                conn.execute("DELETE FROM meme_events WHERE session_key = ?", (session_key,))
             else:
                 cur = conn.execute("DELETE FROM memes")
+                conn.execute("DELETE FROM meme_events")
             return int(cur.rowcount or 0)
 
     def delete_memes_by_sender(self, session_key: str, sender_id: str) -> int:
         with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id FROM memes WHERE session_key = ? AND created_by_id = ?",
+                (session_key, sender_id),
+            ).fetchall()
+            meme_ids = [int(row["id"] or 0) for row in rows if int(row["id"] or 0)]
             cur = conn.execute(
                 "DELETE FROM memes WHERE session_key = ? AND created_by_id = ?",
                 (session_key, sender_id),
             )
+            conn.execute(
+                "DELETE FROM meme_events WHERE session_key = ? AND actor_id = ?",
+                (session_key, sender_id),
+            )
+            if meme_ids:
+                placeholders = ",".join("?" for _ in meme_ids)
+                conn.execute(
+                    f"DELETE FROM meme_events WHERE session_key = ? AND meme_id IN ({placeholders})",
+                    [session_key, *meme_ids],
+                )
             return int(cur.rowcount or 0)
+
+    @staticmethod
+    def _row_to_play_usage(row: sqlite3.Row) -> dict:
+        return {
+            "id": row["id"],
+            "session_key": row["session_key"],
+            "command_key": row["command_key"],
+            "raw_text": row["raw_text"],
+            "sender_id": row["sender_id"],
+            "sender_name": row["sender_name"],
+            "created_at": row["created_at"],
+        }
+
+    @staticmethod
+    def _row_to_meme_event(row: sqlite3.Row) -> dict:
+        return {
+            "id": row["id"],
+            "meme_id": int(row["meme_id"] or 0),
+            "session_key": row["session_key"],
+            "meme_name": row["meme_name"],
+            "event_type": row["event_type"],
+            "actor_id": row["actor_id"],
+            "actor_name": row["actor_name"],
+            "note": row["note"],
+            "created_at": row["created_at"],
+        }
+
+    def record_play_usage(
+        self,
+        *,
+        session_key: str,
+        command_key: str,
+        raw_text: str,
+        sender_id: str,
+        sender_name: str,
+    ) -> None:
+        created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO play_usage (
+                    session_key, command_key, raw_text, sender_id, sender_name, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_key,
+                    command_key,
+                    raw_text,
+                    sender_id,
+                    sender_name,
+                    created_at,
+                ),
+            )
+
+    def play_usage_stats(self, limit: int = 12) -> dict:
+        limit = max(1, min(int(limit or 12), 50))
+        with self._connect() as conn:
+            total = int(conn.execute("SELECT COUNT(*) FROM play_usage").fetchone()[0] or 0)
+            top_rows = conn.execute(
+                """
+                SELECT command_key, COUNT(*) AS count, MAX(created_at) AS last_used
+                FROM play_usage
+                GROUP BY command_key
+                ORDER BY count DESC, last_used DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            recent_rows = conn.execute(
+                "SELECT * FROM play_usage ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return {
+            "total_plays": total,
+            "top_commands": [
+                {
+                    "command_key": str(row["command_key"]),
+                    "count": int(row["count"] or 0),
+                    "last_used": str(row["last_used"] or ""),
+                }
+                for row in top_rows
+            ],
+            "recent": [self._row_to_play_usage(row) for row in recent_rows],
+        }
+
+    def record_meme_event(
+        self,
+        *,
+        meme_id: int = 0,
+        session_key: str,
+        meme_name: str,
+        event_type: str,
+        actor_id: str,
+        actor_name: str,
+        note: str,
+    ) -> None:
+        created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO meme_events (
+                    meme_id, session_key, meme_name, event_type, actor_id, actor_name, note, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(meme_id or 0),
+                    session_key,
+                    meme_name,
+                    event_type,
+                    actor_id,
+                    actor_name,
+                    note,
+                    created_at,
+                ),
+            )
+
+    def list_meme_events(self, *, session_key: str = "", limit: int = 80) -> list[dict]:
+        limit = max(1, min(int(limit or 80), 300))
+        clauses = []
+        params: list[object] = []
+        if session_key:
+            clauses.append("session_key = ?")
+            params.append(session_key)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM meme_events {where} ORDER BY id DESC LIMIT ?",
+                params,
+            ).fetchall()
+        return [self._row_to_meme_event(row) for row in rows]
 
 
 @register(
     "astrbot_plugin_funbox",
     "chuiguo+codex",
     "安全轻量的群聊趣味工具箱：管理面板、梗档案、群聊天气、隐私控制",
-    "1.2.0",
+    "1.3.0",
     "https://github.com/Chuiguo/astrbot_plugin_funbox",
 )
 class FunBoxPlugin(Star):
@@ -384,6 +568,12 @@ class FunBoxPlugin(Star):
             minimum=20,
         )
         self.dashboard_allow_clear_all = self._config_bool("dashboard_allow_clear_all", False)
+        self.enable_usage_stats = self._config_bool("enable_usage_stats", True)
+        self.dashboard_timeline_limit = self._config_int(
+            "dashboard_timeline_limit",
+            80,
+            minimum=20,
+        )
         self.enable_auto_daily = self._config_bool("enable_auto_daily", False)
         self.daily_report_hour = min(
             23,
@@ -437,6 +627,8 @@ class FunBoxPlugin(Star):
         routes = (
             ("page/status", self.page_status, ["GET"], "FunBox dashboard status"),
             ("page/memes", self.page_memes, ["GET"], "FunBox dashboard memes"),
+            ("page/play-usage", self.page_play_usage, ["GET"], "FunBox dashboard play usage"),
+            ("page/meme-events", self.page_meme_events, ["GET"], "FunBox dashboard meme timeline"),
             ("page/delete-meme", self.page_delete_meme, ["POST"], "FunBox dashboard delete meme"),
             ("page/clear-memes", self.page_clear_memes, ["POST"], "FunBox dashboard clear memes"),
         )
@@ -553,6 +745,8 @@ class FunBoxPlugin(Star):
             "total_memes": 0,
             "session_count": 0,
             "total_recalls": 0,
+            "total_meme_events": 0,
+            "total_plays": 0,
             "db_path": str(self.db_path),
             "db_size_bytes": 0,
             "last_updated": "",
@@ -562,7 +756,7 @@ class FunBoxPlugin(Star):
         return {
             "ok": True,
             "data": {
-                "version": "1.2.0",
+                "version": "1.3.0",
                 "database": db_stats,
                 "memory": {
                     "sessions": len(self.recent),
@@ -582,6 +776,8 @@ class FunBoxPlugin(Star):
                     "enable_meme_database": self.enable_meme_database,
                     "dashboard_page_limit": self.dashboard_page_limit,
                     "dashboard_allow_clear_all": self.dashboard_allow_clear_all,
+                    "enable_usage_stats": self.enable_usage_stats,
+                    "dashboard_timeline_limit": self.dashboard_timeline_limit,
                     "max_cache_messages": self.max_cache_messages,
                     "max_meme_entries": self.max_meme_entries,
                     "natural_cooldown_seconds": self.natural_cooldown_seconds,
@@ -620,6 +816,39 @@ class FunBoxPlugin(Star):
 
         return await self._page_json(handler)
 
+    async def page_play_usage(self):
+        async def handler():
+            params = await self._page_query_params()
+            limit = int(params.get("limit") or 20)
+            usage = self.store.play_usage_stats(limit=limit) if self._db_ready and self.enable_usage_stats else {
+                "total_plays": 0,
+                "top_commands": [],
+                "recent": [],
+            }
+            return {
+                "ok": True,
+                "data": usage,
+            }
+
+        return await self._page_json(handler)
+
+    async def page_meme_events(self):
+        async def handler():
+            params = await self._page_query_params()
+            session_key = str(params.get("session_key") or "").strip()
+            limit = int(params.get("limit") or self.dashboard_timeline_limit)
+            items = self.store.list_meme_events(session_key=session_key, limit=limit) if self._db_ready else []
+            return {
+                "ok": True,
+                "data": {
+                    "items": items,
+                    "total": len(items),
+                    "session_key": session_key,
+                },
+            }
+
+        return await self._page_json(handler)
+
     async def page_delete_meme(self):
         async def handler():
             body = await self._page_json_body()
@@ -627,6 +856,16 @@ class FunBoxPlugin(Star):
             if meme_id <= 0:
                 raise ValueError("缺少梗 ID")
             removed = self.store.delete_meme(meme_id) if self._db_ready else None
+            if removed and self._db_ready:
+                self.store.record_meme_event(
+                    meme_id=int(removed.get("id") or 0),
+                    session_key=str(removed.get("session_key") or ""),
+                    meme_name=str(removed.get("name") or ""),
+                    event_type="delete",
+                    actor_id="dashboard",
+                    actor_name="管理面板",
+                    note="从管理面板删除梗档案",
+                )
             self._drop_memory_meme_by_id(meme_id)
             return {
                 "ok": True,
@@ -744,6 +983,73 @@ class FunBoxPlugin(Star):
             return ""
         parts = text.split(maxsplit=1)
         return parts[1].strip() if len(parts) > 1 else ""
+
+    def _command_key_from_text(self, text: str) -> str:
+        raw = self._clean(text, limit=80)
+        if not raw:
+            return "未知玩法"
+        first = raw.split(maxsplit=1)[0].strip().lstrip("/!！.。#")
+        return first or "自然触发"
+
+    def _record_play_usage(self, event: AstrMessageEvent, command_key: str, raw_text: str = "") -> None:
+        if not self._db_ready or not self.enable_usage_stats:
+            return
+        try:
+            self.store.record_play_usage(
+                session_key=self._session_key(event),
+                command_key=self._clean(command_key, limit=40),
+                raw_text=self._clean(raw_text or self._message_text(event), limit=160),
+                sender_id=self._sender_id(event),
+                sender_name=self._sender_name(event),
+            )
+        except Exception as e:
+            logger.debug(f"FunBox 记录玩法热度失败: {e}")
+
+    def _record_natural_play_usage(self, event: AstrMessageEvent, intent: str | None, raw_text: str) -> None:
+        intent_names = {
+            "help": "自然:帮助",
+            "menu": "自然:菜单",
+            "self_check": "自然:自检",
+            "examples": "自然:示例",
+            "recommend": "自然:推荐玩法",
+            "random_play": "自然:随机玩法",
+            "status": "自然:状态",
+            "privacy": "自然:隐私",
+            "leaderboard": "自然:群聊榜单",
+            "meme_birth": "自然:梗诞生",
+            "meme_dictionary": "自然:梗词典",
+            "meme_recall": "自然:梗回收",
+            "weather": "自然:群聊天气",
+            "qzone": "自然:空间侦探",
+            "clear_cache": "自然:清缓存",
+            "forget_me": "自然:忘记我",
+            "hot_words": "自然:群聊热词",
+            "scene": "自然:名场面",
+            "vibe": "自然:氛围雷达",
+            "tarot": "自然:赛博塔罗",
+            "fortune": "自然:今日运势",
+            "persona": "自然:今日人设",
+            "abstract": "自然:抽象指数",
+            "profile": "自然:群友小档案",
+            "daily_report": "自然:群聊日报",
+        }
+        self._record_play_usage(event, intent_names.get(intent or "", "自然:闲聊触发"), raw_text)
+
+    def _record_meme_event(self, event: AstrMessageEvent, item: dict, event_type: str, note: str) -> None:
+        if not self._db_ready:
+            return
+        try:
+            self.store.record_meme_event(
+                meme_id=int(item.get("id") or 0),
+                session_key=self._session_key(event),
+                meme_name=self._clean(str(item.get("name") or ""), limit=40),
+                event_type=event_type,
+                actor_id=self._sender_id(event),
+                actor_name=self._sender_name(event),
+                note=self._clean(note, limit=180),
+            )
+        except Exception as e:
+            logger.debug(f"FunBox 记录梗事件失败: {e}")
 
     def _rng(self, event: AstrMessageEvent, salt: str) -> random.Random:
         day = datetime.now().strftime("%Y-%m-%d")
@@ -1199,7 +1505,7 @@ class FunBoxPlugin(Star):
         persona_prompt = await self._current_persona_prompt(event)
 
         lines = ["FunBox 自检："]
-        lines.append(f"插件版本：1.2.0")
+        lines.append(f"插件版本：1.3.0")
         lines.append(f"LLM provider：{'已读取' if provider else '未读取到，LLM 玩法会走模板兜底'}")
         lines.append(f"AstrBot 人格：{'已读取' if persona_prompt else '未读取到，使用中性兜底，不另设新人格'}")
         lines.append(f"最近消息样本：{recent_count}/{self.max_cache_messages}")
@@ -1214,6 +1520,7 @@ class FunBoxPlugin(Star):
         lines.append(f"群聊天气：{'开启' if self.enable_group_weather else '关闭'}")
         lines.append(f"群聊榜单：{'开启' if self.enable_leaderboard else '关闭'}，最低样本 {self.leaderboard_min_samples}")
         lines.append(f"空间侦探：{'开启' if self.enable_space_detective else '关闭'}")
+        lines.append(f"玩法热度统计：{'开启' if self.enable_usage_stats else '关闭'}")
         lines.append(f"自动日报：{'开启' if self.enable_auto_daily else '关闭'}")
 
         suggestions = []
@@ -1266,6 +1573,7 @@ class FunBoxPlugin(Star):
             f"群聊天气：{'开启' if self.enable_group_weather else '关闭'}，LLM润色 {'开启' if self.weather_use_llm else '关闭'}\n"
             f"群聊榜单：{'开启' if self.enable_leaderboard else '关闭'}，最低样本 {self.leaderboard_min_samples}\n"
             f"空间侦探：{'开启' if self.enable_space_detective else '关闭'}\n"
+            f"玩法热度统计：{'开启' if self.enable_usage_stats else '关闭'}，记忆线加载 {self.dashboard_timeline_limit} 条\n"
             f"自动日报：{auto_daily}\n"
             f"数据库：{db_mode}\n"
             f"隐私：最近消息只在内存里；{privacy_tail}"
@@ -1282,9 +1590,10 @@ class FunBoxPlugin(Star):
             "1. 只缓存当前会话最近消息，用来生成菜单推荐、榜单、小档案、日报和梗档案。\n"
             "2. 最近消息和小档案不写数据库，重启 AstrBot 后会自然消失。\n"
             f"3. {meme_store}\n"
-            "4. /funbox清缓存：清掉当前会话所有 FunBox 样本和梗档案。\n"
-            "5. /funbox忘记我：删除你在当前会话里的最近样本，以及你创建的梗。\n"
-            "6. 榜单、小档案和梗档案都是节目效果，不代表真实人格。"
+            "4. 玩法热度只记录 FunBox 触发入口，不记录普通聊天内容。\n"
+            "5. /funbox清缓存：清掉当前会话所有 FunBox 样本和梗档案。\n"
+            "6. /funbox忘记我：删除你在当前会话里的最近样本，以及你创建的梗。\n"
+            "7. 榜单、小档案和梗档案都是节目效果，不代表真实人格。"
         )
 
     def _clear_session_cache(self, event: AstrMessageEvent) -> tuple[int, int, int]:
@@ -1581,6 +1890,7 @@ class FunBoxPlugin(Star):
         if self._db_ready:
             try:
                 entry["id"] = self.store.save_meme(session_key, entry)
+                self._record_meme_event(event, entry, "birth", f"登记梗：{content}")
             except Exception as e:
                 logger.warning(f"FunBox 保存梗档案失败: {e}")
         self.meme_book[session_key].append(entry)
@@ -1627,6 +1937,7 @@ class FunBoxPlugin(Star):
         if self._db_ready:
             try:
                 self.store.increment_use_count(int(item.get("id") or 0))
+                self._record_meme_event(event, item, "recall", f"回收梗：{item.get('name')}")
             except Exception as e:
                 logger.debug(f"FunBox 更新梗使用次数失败: {e}")
         fallback = (
@@ -1659,6 +1970,7 @@ class FunBoxPlugin(Star):
         removed = items.pop(index)
         if self._db_ready:
             try:
+                self._record_meme_event(event, removed, "delete", f"删除梗：{removed.get('name')}")
                 self.store.delete_meme(int(removed.get("id") or 0))
             except Exception as e:
                 logger.debug(f"FunBox 删除梗档案失败: {e}")
@@ -1879,9 +2191,10 @@ class FunBoxPlugin(Star):
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def remember_group_message(self, event: AstrMessageEvent):
         text = self._clean(self._message_text(event), limit=140)
-        if self._is_command_like(text):
-            return
         if self._is_self_message(event):
+            return
+        if self._is_command_like(text):
+            self._record_play_usage(event, self._command_key_from_text(text), text)
             return
 
         self._update_profile(event, text)
@@ -1926,6 +2239,8 @@ class FunBoxPlugin(Star):
             )
             if remaining > 0:
                 return
+
+        self._record_natural_play_usage(event, intent, text)
 
         if intent in {"help", "menu"}:
             reply = self._menu_text()
@@ -2440,3 +2755,4 @@ class FunBoxPlugin(Star):
         )
         yield event.plain_result(reply)
         event.stop_event()
+
