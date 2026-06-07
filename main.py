@@ -547,7 +547,7 @@ class FunBoxStore:
     "astrbot_plugin_funbox",
     "chuiguo+codex",
     "安全轻量的群聊趣味工具箱：管理面板、梗档案、群聊天气、隐私控制",
-    "1.4.4",
+    "2.0.0",
     "https://github.com/Chuiguo/astrbot_plugin_funbox",
 )
 class FunBoxPlugin(Star):
@@ -781,7 +781,7 @@ class FunBoxPlugin(Star):
         return {
             "ok": True,
             "data": {
-                "version": "1.4.4",
+                "version": "2.0.0",
                 "database": db_stats,
                 "memory": {
                     "sessions": len(self.recent),
@@ -1554,7 +1554,7 @@ class FunBoxPlugin(Star):
         persona_prompt = await self._current_persona_prompt(event)
 
         lines = ["FunBox 自检："]
-        lines.append(f"插件版本：1.4.4")
+        lines.append(f"插件版本：2.0.0")
         lines.append(f"LLM provider：{'已读取' if provider else '未读取到，LLM 玩法会走模板兜底'}")
         lines.append(f"AstrBot 人格：{'已读取' if persona_prompt else '未读取到，使用中性兜底，不另设新人格'}")
         lines.append(f"最近消息样本：{recent_count}/{self.max_cache_messages}")
