@@ -1,0 +1,128 @@
+{
+  "enable_natural_reply": {
+    "description": "启用自然语言回复",
+    "type": "bool",
+    "hint": "开启后，群聊里把 bot 昵称或触发名放在句首即可触发 FunBox，例如“盒子，刚刚群里聊了啥”。",
+    "default": true
+  },
+  "only_when_addressed": {
+    "description": "仅在叫到 bot 名字时自然回复",
+    "type": "bool",
+    "hint": "建议开启，避免 bot 在群里乱插嘴。关闭后，明显的趣味请求也会触发，例如“我今天运势咋样”。",
+    "default": true
+  },
+  "extra_trigger_names": {
+    "description": "额外触发名",
+    "type": "list",
+    "hint": "除了 bot 昵称和 funbox/盒子/小盒外，也可以填自定义叫法，例如：小雪、赛博盒子。建议用户把触发名放在句首，减少误触发。",
+    "default": []
+  },
+  "max_cache_messages": {
+    "description": "每个会话缓存消息数",
+    "type": "int",
+    "hint": "用于上下文生成。越大越能理解上下文，但会多占一点内存。",
+    "default": 90
+  },
+  "max_meme_entries": {
+    "description": "每个会话梗档案上限",
+    "type": "int",
+    "hint": "每个会话最多恢复多少条梗档案到内存，默认 30。开启数据库后，梗档案会写入本地 SQLite。",
+    "default": 30
+  },
+  "enable_meme_database": {
+    "description": "启用梗档案数据库",
+    "type": "bool",
+    "hint": "开启后，/梗诞生 会写入 FunBox 本地 SQLite，管理面板可浏览、搜索、删除，并可跨重启保留。",
+    "default": true
+  },
+  "dashboard_page_limit": {
+    "description": "面板默认加载条数",
+    "type": "int",
+    "hint": "管理面板一次默认加载多少条梗档案。默认 120，后端最多限制到 500。",
+    "default": 120
+  },
+  "dashboard_allow_clear_all": {
+    "description": "允许面板清空全部梗档案",
+    "type": "bool",
+    "hint": "默认关闭，避免误操作。关闭时，面板只能清理指定会话；开启后才允许一键清空全部梗档案。",
+    "default": false
+  },
+  "enable_usage_stats": {
+    "description": "启用玩法热度统计",
+    "type": "bool",
+    "hint": "开启后，FunBox 会记录群聊里触发过哪些玩法，用于管理面板展示热度排行。不会记录普通聊天内容。",
+    "default": true
+  },
+  "dashboard_timeline_limit": {
+    "description": "面板记忆线加载条数",
+    "type": "int",
+    "hint": "管理面板默认加载多少条梗事件记录，包含梗诞生、回收、删除。默认 80。",
+    "default": 80
+  },
+  "enable_llm": {
+    "description": "启用 LLM 上下文生成",
+    "type": "bool",
+    "hint": "关闭后只使用内置规则模板，不调用大模型。",
+    "default": true
+  },
+  "persona_style": {
+    "description": "附加口吻提示",
+    "type": "string",
+    "hint": "可留空。它只作为低优先级语气提示，不会覆盖 AstrBot 当前会话人格。",
+    "default": ""
+  },
+  "natural_cooldown_seconds": {
+    "description": "自然回复冷却秒数",
+    "type": "int",
+    "hint": "仅影响未直接叫 bot 名字时的自然触发；直接叫名字仍会回复。设为 0 表示不冷却。",
+    "default": 180
+  },
+  "enable_profiles": {
+    "description": "启用群友小档案",
+    "type": "bool",
+    "hint": "只基于内存里的最近群聊样本做轻量画像，不落库。",
+    "default": true
+  },
+  "enable_group_weather": {
+    "description": "启用群聊天气",
+    "type": "bool",
+    "hint": "关闭后 /群聊天气 和相关自然语言触发会提示已关闭。",
+    "default": true
+  },
+  "weather_use_llm": {
+    "description": "群聊天气使用 LLM 润色",
+    "type": "bool",
+    "hint": "开启后群聊天气会结合上下文生成更有梗的预报；关闭后只使用规则模板，更省 token。",
+    "default": true
+  },
+  "enable_leaderboard": {
+    "description": "启用群聊榜单",
+    "type": "bool",
+    "hint": "关闭后 /群聊榜单、/抽象王、/梗王、/问号王 会提示已关闭。",
+    "default": true
+  },
+  "leaderboard_min_samples": {
+    "description": "榜单最低样本数",
+    "type": "int",
+    "hint": "每个群友至少缓存多少条消息才参与榜单，默认 1。调高可减少偶然上榜。",
+    "default": 1
+  },
+  "enable_space_detective": {
+    "description": "启用空间侦探",
+    "type": "bool",
+    "hint": "关闭后 /空间侦探、/说说锐评、/空间锐评 会提示已关闭。",
+    "default": true
+  },
+  "enable_auto_daily": {
+    "description": "启用自动群聊日报",
+    "type": "bool",
+    "hint": "开启后，到 daily_report_hour 后群里首次有人发言时，每个会话每天自动发一次日报。",
+    "default": false
+  },
+  "daily_report_hour": {
+    "description": "自动日报小时",
+    "type": "int",
+    "hint": "0-23，默认 23 点。只有 enable_auto_daily 开启时生效。",
+    "default": 23
+  }
+}
