@@ -117,7 +117,7 @@ MENU_CATEGORIES = {
         ("梗词典", "查看本群临时梗档案。"),
         ("梗回收", "把旧梗翻出来接到当前上下文里。"),
         ("群聊热词", "统计最近反复出现的关键词。"),
-        ("群聊速写", "把最近聊天压成一张短小切片。"),
+        ("群聊速写", "把刚刚的聊天截成一张四行小画面。"),
         ("群聊日报", "总结最近热词、名场面和气质。"),
         ("群聊榜单", "抽象王、梗王、问号王轻量排行。"),
         ("氛围雷达", "用读数吐槽群聊空气。"),
@@ -159,7 +159,7 @@ PLAY_EXAMPLES = (
     ("梗诞生", "/梗诞生 这服务器像猫一样不听话", "看到一句有梗的话就登记进群聊文化。"),
     ("梗回收", "/梗回收", "想把旧梗翻出来接一句时用它。"),
     ("群聊热词", "/群聊热词", "最近大家反复念叨同一件事时用它。"),
-    ("群聊速写", "/群聊速写", "聊了一小阵但还没到日报体量时，用它截一张群聊快照。"),
+    ("群聊速写", "/群聊速写", "聊了一小阵但还不够日报时，用它截一张有画面的短切片。"),
     ("群聊日报", "/群聊日报", "群里聊了一阵后，用它收个尾。"),
     ("群聊榜单", "/群聊榜单", "样本多了以后可以看看今天谁最有节目效果。"),
     ("空间侦探", "/空间侦探 今天又被生活创飞了", "想锐评说说/空间文案时用它。"),
@@ -528,7 +528,7 @@ class FunBoxStore:
     "astrbot_plugin_funbox",
     "chuiguo+codex",
     "安全轻量的群聊趣味工具箱：管理面板、梗档案、群聊天气、隐私控制",
-    "1.4.0",
+    "1.4.1",
     "https://github.com/Chuiguo/astrbot_plugin_funbox",
 )
 class FunBoxPlugin(Star):
@@ -762,7 +762,7 @@ class FunBoxPlugin(Star):
         return {
             "ok": True,
             "data": {
-                    "version": "1.4.0",
+                    "version": "1.4.1",
                 "database": db_stats,
                 "memory": {
                     "sessions": len(self.recent),
@@ -1336,7 +1336,7 @@ class FunBoxPlugin(Star):
             "menu": self._menu_text(),
             "recommend": "我建议现在玩：/赛博塔罗\n原因：样本还少，先抽一张赛博玄学不冷场。",
             "random_play": "随机玩法：/氛围雷达\n直接发它，我来一本正经地扫一下群聊空气。",
-            "snapshot": "群聊速写启动失败：快照纸还是空的。群里再冒几句话，我就能画一张切片。",
+            "snapshot": "现在还太安静，速写纸上只有两三笔。再聊几句，我就能截一张有画面的群聊切片。",
             "hot_words": "我还没攒够上下文，等群里再聊几句我就能抓热词。",
             "scene": "名场面仓库还没攒起来，先让群友发点能入史的。",
             "vibe": "氛围雷达正在预热。再聊几句，我就能开始一本正经地胡说八道。",
@@ -1371,7 +1371,7 @@ class FunBoxPlugin(Star):
             "menu": "用户想看 FunBox 菜单。请按常用、个人、群聊、空间、不知道玩啥分组，短短介绍玩法。",
             "recommend": "用户想让你推荐一个当前最适合玩的 FunBox 玩法。请基于上下文只推荐 1 个玩法并说明原因。",
             "random_play": "用户想随机抽一个 FunBox 玩法。请给出玩法名、可直接发送的命令和一句理由。",
-            "snapshot": "用户想看最近群聊速写。请把最近聊天压缩成一张短小群聊快照，包含场景、关键词、名场面和一句旁白。",
+            "snapshot": "用户想看最近群聊速写。请把最近聊天写成一张短小切片：标题、画面、镜头、旁白，不要写成日报或总结。",
             "hot_words": "用户想知道最近群聊热词。请基于上下文列出 3~6 个热词，并给一句好笑结论。",
             "scene": "用户想找最近群聊名场面。请从上下文挑一句最有节目效果的话，并给一句短评。",
             "vibe": "用户想知道群聊氛围。请基于上下文生成氛围雷达，包含类型、读数、结论。",
@@ -1468,7 +1468,7 @@ class FunBoxPlugin(Star):
         if len(items) >= 25 and len(speakers) >= 3:
             return ("群聊日报", "/群聊日报", "样本够了，适合直接生成一份群聊日报。")
         if len(items) >= 10:
-            return ("群聊速写", "/群聊速写", "样本刚好够截一张快照，比日报轻一点。")
+            return ("群聊速写", "/群聊速写", "样本刚好够一张小切片，比日报轻，适合趁热截一帧。")
         if long_msgs >= 6:
             return ("群聊热词", "/群聊热词", "长消息偏多，先抓关键词比较有意思。")
         return ("今日人设", "/今日人设", "气氛比较平稳，先看看 bot 当前人格的今日状态。")
@@ -1518,7 +1518,7 @@ class FunBoxPlugin(Star):
         persona_prompt = await self._current_persona_prompt(event)
 
         lines = ["FunBox 自检："]
-        lines.append(f"插件版本：1.4.0")
+        lines.append(f"插件版本：1.4.1")
         lines.append(f"LLM provider：{'已读取' if provider else '未读取到，LLM 玩法会走模板兜底'}")
         lines.append(f"AstrBot 人格：{'已读取' if persona_prompt else '未读取到，使用中性兜底，不另设新人格'}")
         lines.append(f"最近消息样本：{recent_count}/{self.max_cache_messages}")
@@ -2116,10 +2116,28 @@ class FunBoxPlugin(Star):
     def _scene_candidates(self, items: list[dict], *, top: int = 5) -> list[dict]:
         return sorted(items, key=self._scene_score, reverse=True)[:top]
 
+    def _polish_snapshot_reply(self, text: str, fallback: str) -> str:
+        text = re.sub(r"\n{3,}", "\n\n", (text or "").strip())
+        if not text:
+            return fallback
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if len(lines) <= 4 and any(line.startswith("群聊速写") for line in lines):
+            return "\n".join(lines)
+
+        wanted_prefixes = ("群聊速写", "画面：", "镜头：", "旁白：")
+        picked: list[str] = []
+        for prefix in wanted_prefixes:
+            match = next((line for line in lines if line.startswith(prefix)), "")
+            if match:
+                picked.append(match)
+        if len(picked) >= 3:
+            return "\n".join(picked[:4])
+        return fallback
+
     async def _build_group_snapshot(self, event: AstrMessageEvent) -> str:
         items = list(self.recent[self._session_key(event)])[-80:]
         if len(items) < 4:
-            return "群聊速写启动失败：快照纸还是空的。群里再冒几句话，我就能画一张切片。"
+            return "现在还太安静，速写纸上只有两三笔。再聊几句，我就能截一张有画面的群聊切片。"
 
         texts = [item.get("text", "") for item in items if item.get("text")]
         joined = "\n".join(texts)
@@ -2127,56 +2145,69 @@ class FunBoxPlugin(Star):
         laugh = len(re.findall(r"哈|草|笑|乐|绷|hhh|233|蚌", joined, re.I))
         question = joined.count("?") + joined.count("？")
         exclaim = joined.count("!") + joined.count("！")
-        hot_words = self._hot_word_counts(items, top=5)
+        hot_words = self._hot_word_counts(items, top=4)
         hot_text = "、".join(word for word, _ in hot_words) or "暂无明显关键词"
+        def short(value: str, limit: int = 54) -> str:
+            value = re.sub(r"\s+", " ", str(value or "")).strip()
+            return value if len(value) <= limit else value[:limit].rstrip() + "..."
+
         scenes = self._scene_candidates(items[-50:], top=3)
         scene_text = "\n".join(
-            f"{item.get('time')} {item.get('sender')}：{item.get('text')}"
+            f"{item.get('time')} {item.get('sender')}：{short(item.get('text'), 72)}"
             for item in scenes
         ) or "暂无"
 
         if laugh >= 4:
             frame = "笑点冒泡"
+            image = "几句笑声把屏幕戳出小气泡。"
             aside = "这段像群聊自己给自己加了弹幕。"
         elif question >= 4:
             frame = "集体排障"
+            image = "问号排成一小队，大家在给问题找出口。"
             aside = "空气里有一点问号味，适合先把问题摊平。"
         elif exclaim >= 4:
             frame = "能量上扬"
+            image = "感叹号把气氛顶高了一点。"
             aside = "标点已经开始踮脚，群聊热度在升。"
         elif len(speakers) >= 4:
             frame = "多人冒泡"
+            image = "几个头像轮流亮起，群聊有了小小人声。"
             aside = "大家像陆续上线的小灯，一盏一盏亮起来。"
         else:
             frame = "轻量闲聊"
+            image = "聊天像桌角便利贴，轻轻贴了一张。"
             aside = "不算热闹，但已经有一点能被截屏保存的生活噪声。"
 
         if scenes:
-            lens = f"{scenes[0].get('sender')}：{scenes[0].get('text')}"
+            lens = f"{scenes[0].get('sender')}：{short(scenes[0].get('text'), 64)}"
         else:
             lens = "暂无明显名场面"
         fallback = (
-            f"群聊速写：{frame}\n"
-            f"画面：最近 {len(texts)} 条，约 {len(speakers)} 人参与\n"
-            f"关键词：{hot_text}\n"
+            f"群聊速写｜{frame}\n"
+            f"画面：{image}\n"
             f"镜头：{lens}\n"
-            f"旁白：{aside}"
+            f"旁白：{aside}（关键词：{hot_text}）"
         )
 
-        return await self._generate_with_context(
+        reply = await self._generate_with_context(
             event,
             task=(
-                "把最近群聊写成一张“群聊速写/聊天快照”。它不是日报，不要长篇总结；"
-                "像给刚刚这段聊天拍一张轻松、有梗但不攻击人的快照。\n"
+                "把最近群聊写成一张精品“群聊速写/聊天快照”。它不是日报，不要长篇总结，"
+                "不要列统计，不要像机器人报告；像给刚刚这段聊天截一张轻松、有画面的小切片。\n"
                 f"统计：样本 {len(texts)} 条，参与者约 {len(speakers)} 人，"
                 f"笑点 {laugh}，问号 {question}，感叹号 {exclaim}，速写类型 {frame}。\n"
-                f"关键词：{hot_text}\n"
+                f"关键词素材：{hot_text}\n"
                 f"候选镜头：\n{scene_text}\n"
-                "输出格式：群聊速写：xxx\n画面：xxx\n关键词：xxx\n旁白：xxx"
+                "固定输出 4 行，不要加 Markdown 加粗，不要额外解释：\n"
+                "群聊速写｜2到6字标题\n"
+                "画面：一句有画面感的氛围描写\n"
+                "镜头：从候选镜头里提炼一句，不要歪曲原意\n"
+                "旁白：一句轻松收尾；关键词只作为素材，不单独列一行"
             ),
             fallback=fallback,
-            limit=620,
+            limit=420,
         )
+        return self._polish_snapshot_reply(reply, fallback)
 
     async def _build_daily_report(self, event: AstrMessageEvent, *, auto: bool = False) -> str:
         items = list(self.recent[self._session_key(event)])[-120:]

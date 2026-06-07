@@ -1,6 +1,6 @@
 name: astrbot_plugin_funbox
 display_name: FunBox 趣味工具箱
-desc: 安全轻量的群聊趣味工具箱：管理面板、玩法热度、群聊速写、梗记忆线、SQLite 梗档案
+desc: 安全轻量的群聊趣味工具箱：管理面板、玩法热度、精品群聊速写、梗记忆线、SQLite 梗档案
 help: |
   /趣味帮助
   /趣味菜单
@@ -30,7 +30,7 @@ help: |
   /群聊日报
   /空间侦探 [说说内容]
   也可以直接叫 bot 昵称：群里现在什么氛围？
-version: v1.4.0
+version: v1.4.1
 author: chuiguo+codex
 repo: https://github.com/Chuiguo/astrbot_plugin_funbox
 

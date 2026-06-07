@@ -23,13 +23,13 @@ git log -3 --oneline
 docker restart astrbot
 ```
 
-本次 `v1.4.0` 更新成功后，`git log -3 --oneline` 应该能看到类似：
+拉到最新后，用下面命令确认最近提交：
 
-```text
-5119f59 Add server update guide
-35832e5 Add FunBox development log
-6ab0749 Add group snapshot command
+```bash
+git log -5 --oneline
 ```
+
+如果本轮是 `v1.4.1 群聊速写精品化`，最近提交里应该能看到对应的 `Polish group snapshot` 提交。
 
 ## GitHub 连不上时走 mihomo 代理
 
