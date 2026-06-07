@@ -100,6 +100,16 @@ COMMAND_WORDS = {
 
 NATURAL_NAMES = ("funbox", "盒子", "小盒", "小盒子", "趣味盒")
 
+ADDRESS_REQUIRED_INTENTS = {
+    "clear_cache",
+    "forget_me",
+    "meme_delete",
+    "privacy",
+    "status",
+    "self_check",
+    "examples",
+}
+
 MENU_CATEGORIES = {
     "常用": (
         ("玩点啥", "不知道从哪开始时，让 FunBox 只推荐一个。"),
@@ -537,7 +547,7 @@ class FunBoxStore:
     "astrbot_plugin_funbox",
     "chuiguo+codex",
     "安全轻量的群聊趣味工具箱：管理面板、梗档案、群聊天气、隐私控制",
-    "1.4.2",
+    "1.4.3",
     "https://github.com/Chuiguo/astrbot_plugin_funbox",
 )
 class FunBoxPlugin(Star):
@@ -771,7 +781,7 @@ class FunBoxPlugin(Star):
         return {
             "ok": True,
             "data": {
-                    "version": "1.4.2",
+                    "version": "1.4.3",
                 "database": db_stats,
                 "memory": {
                     "sessions": len(self.recent),
@@ -1225,10 +1235,13 @@ class FunBoxPlugin(Star):
 
     def _is_addressed(self, text: str) -> bool:
         normalized = self._normalize_bot_name(text)
-        return any(name and name in normalized for name in self.bot_names)
+        return any(
+            name and (normalized.startswith(name) or normalized.startswith(f"@{name}"))
+            for name in sorted(self.bot_names, key=len, reverse=True)
+        )
 
     def _detect_intent(self, text: str) -> str | None:
-        lowered = text.lower()
+        lowered = self._strip_address_prefix(text).lower()
         checks = (
             ("self_check", ("funbox自检", "趣味自检", "盒子自检", "自检一下", "检查一下", "哪里坏了")),
             ("examples", ("funbox示例", "趣味示例", "盒子示例", "测试命令", "给我示例", "怎么玩示例")),
@@ -1247,7 +1260,27 @@ class FunBoxPlugin(Star):
             ("help", ("帮助", "怎么用", "你会什么", "funbox")),
             ("profile", ("小档案", "群友档案", "群友画像", "我的档案", "给我建档")),
             ("daily_report", ("日报", "今日总结", "今天群里", "群聊总结")),
-            ("snapshot", ("速写", "群聊速写", "快照", "聊天快照", "群聊切片", "刚刚聊了啥")),
+            (
+                "snapshot",
+                (
+                    "速写",
+                    "群聊速写",
+                    "快照",
+                    "聊天快照",
+                    "群聊切片",
+                    "刚刚聊了啥",
+                    "刚刚群里聊了啥",
+                    "刚才群里聊了啥",
+                    "刚才聊了啥",
+                    "刚刚说了啥",
+                    "刚才说了啥",
+                    "群里聊了啥",
+                    "最近聊了啥",
+                    "刚刚在聊啥",
+                    "刚才在聊啥",
+                    "群里刚刚说什么",
+                ),
+            ),
             ("weather", ("群聊天气", "群聊气象", "聊天气象", "天气预报", "今天群里天气")),
             ("qzone", ("空间侦探", "说说锐评", "空间锐评", "空间报告", "分析说说", "锐评说说")),
             ("hot_words", ("热词", "关键词", "聊什么", "高频词")),
@@ -1273,7 +1306,7 @@ class FunBoxPlugin(Star):
                 continue
             pattern = self._loose_phrase_pattern(name)
             cleaned = re.sub(
-                rf"^\s*{pattern}\s*[,，:：、]?\s*",
+                rf"^\s*@?\s*{pattern}\s*[,，:：、]?\s*",
                 "",
                 cleaned,
                 flags=re.I,
@@ -1296,6 +1329,8 @@ class FunBoxPlugin(Star):
 
     def _looks_like_fun_request(self, text: str, intent: str | None) -> bool:
         if not intent:
+            return False
+        if intent in ADDRESS_REQUIRED_INTENTS:
             return False
         return any(
             marker in text
@@ -1519,7 +1554,7 @@ class FunBoxPlugin(Star):
         persona_prompt = await self._current_persona_prompt(event)
 
         lines = ["FunBox 自检："]
-        lines.append(f"插件版本：1.4.2")
+        lines.append(f"插件版本：1.4.3")
         lines.append(f"LLM provider：{'已读取' if provider else '未读取到，LLM 玩法会走模板兜底'}")
         lines.append(f"AstrBot 人格：{'已读取' if persona_prompt else '未读取到，使用中性兜底，不另设新人格'}")
         lines.append(f"最近消息样本：{recent_count}/{self.max_cache_messages}")
@@ -2334,6 +2369,8 @@ class FunBoxPlugin(Star):
         intent = self._detect_intent(text)
         addressed = self._is_addressed(text)
         if self.only_when_addressed and not addressed:
+            return
+        if not addressed and intent in ADDRESS_REQUIRED_INTENTS:
             return
         if not addressed and not self._looks_like_fun_request(text, intent):
             return

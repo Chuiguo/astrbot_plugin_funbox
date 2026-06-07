@@ -13,7 +13,7 @@ help: |
   /趣味帮助 群聊
   /趣味帮助 梗档案
   也可以直接叫 bot 昵称：群里现在什么氛围？
-version: v1.4.2
+version: v1.4.3
 author: chuiguo+codex
 repo: https://github.com/Chuiguo/astrbot_plugin_funbox
 

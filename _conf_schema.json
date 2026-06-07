@@ -2,7 +2,7 @@
   "enable_natural_reply": {
     "description": "启用自然语言回复",
     "type": "bool",
-    "hint": "开启后，群聊里直接叫 bot 昵称也能触发 FunBox。",
+    "hint": "开启后，群聊里把 bot 昵称或触发名放在句首即可触发 FunBox，例如“盒子，刚刚群里聊了啥”。",
     "default": true
   },
   "only_when_addressed": {
@@ -14,7 +14,7 @@
   "extra_trigger_names": {
     "description": "额外触发名",
     "type": "list",
-    "hint": "除了 bot 昵称和 funbox/盒子/小盒外，也可以填自定义叫法，例如：小雪、赛博盒子。",
+    "hint": "除了 bot 昵称和 funbox/盒子/小盒外，也可以填自定义叫法，例如：小雪、赛博盒子。建议用户把触发名放在句首，减少误触发。",
     "default": []
   },
   "max_cache_messages": {
