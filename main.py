@@ -83,6 +83,10 @@ COMMAND_WORDS = {
     "抽象评分",
     "群聊热词",
     "热词",
+    "群聊速写",
+    "速写",
+    "群聊快照",
+    "聊天快照",
     "群友小档案",
     "小档案",
     "群友档案",
@@ -113,6 +117,7 @@ MENU_CATEGORIES = {
         ("梗词典", "查看本群临时梗档案。"),
         ("梗回收", "把旧梗翻出来接到当前上下文里。"),
         ("群聊热词", "统计最近反复出现的关键词。"),
+        ("群聊速写", "把最近聊天压成一张短小切片。"),
         ("群聊日报", "总结最近热词、名场面和气质。"),
         ("群聊榜单", "抽象王、梗王、问号王轻量排行。"),
         ("氛围雷达", "用读数吐槽群聊空气。"),
@@ -154,6 +159,7 @@ PLAY_EXAMPLES = (
     ("梗诞生", "/梗诞生 这服务器像猫一样不听话", "看到一句有梗的话就登记进群聊文化。"),
     ("梗回收", "/梗回收", "想把旧梗翻出来接一句时用它。"),
     ("群聊热词", "/群聊热词", "最近大家反复念叨同一件事时用它。"),
+    ("群聊速写", "/群聊速写", "聊了一小阵但还没到日报体量时，用它截一张群聊快照。"),
     ("群聊日报", "/群聊日报", "群里聊了一阵后，用它收个尾。"),
     ("群聊榜单", "/群聊榜单", "样本多了以后可以看看今天谁最有节目效果。"),
     ("空间侦探", "/空间侦探 今天又被生活创飞了", "想锐评说说/空间文案时用它。"),
@@ -522,7 +528,7 @@ class FunBoxStore:
     "astrbot_plugin_funbox",
     "chuiguo+codex",
     "安全轻量的群聊趣味工具箱：管理面板、梗档案、群聊天气、隐私控制",
-    "1.3.0",
+    "1.4.0",
     "https://github.com/Chuiguo/astrbot_plugin_funbox",
 )
 class FunBoxPlugin(Star):
@@ -756,7 +762,7 @@ class FunBoxPlugin(Star):
         return {
             "ok": True,
             "data": {
-                "version": "1.3.0",
+                    "version": "1.4.0",
                 "database": db_stats,
                 "memory": {
                     "sessions": len(self.recent),
@@ -1024,6 +1030,7 @@ class FunBoxPlugin(Star):
             "clear_cache": "自然:清缓存",
             "forget_me": "自然:忘记我",
             "hot_words": "自然:群聊热词",
+            "snapshot": "自然:群聊速写",
             "scene": "自然:名场面",
             "vibe": "自然:氛围雷达",
             "tarot": "自然:赛博塔罗",
@@ -1231,6 +1238,7 @@ class FunBoxPlugin(Star):
             ("help", ("帮助", "怎么用", "你会什么", "funbox")),
             ("profile", ("小档案", "群友档案", "群友画像", "我的档案", "给我建档")),
             ("daily_report", ("日报", "今日总结", "今天群里", "群聊总结")),
+            ("snapshot", ("速写", "群聊速写", "快照", "聊天快照", "群聊切片", "刚刚聊了啥")),
             ("weather", ("群聊天气", "群聊气象", "聊天气象", "天气预报", "今天群里天气")),
             ("qzone", ("空间侦探", "说说锐评", "空间锐评", "空间报告", "分析说说", "锐评说说")),
             ("hot_words", ("热词", "关键词", "聊什么", "高频词")),
@@ -1328,6 +1336,7 @@ class FunBoxPlugin(Star):
             "menu": self._menu_text(),
             "recommend": "我建议现在玩：/赛博塔罗\n原因：样本还少，先抽一张赛博玄学不冷场。",
             "random_play": "随机玩法：/氛围雷达\n直接发它，我来一本正经地扫一下群聊空气。",
+            "snapshot": "群聊速写启动失败：快照纸还是空的。群里再冒几句话，我就能画一张切片。",
             "hot_words": "我还没攒够上下文，等群里再聊几句我就能抓热词。",
             "scene": "名场面仓库还没攒起来，先让群友发点能入史的。",
             "vibe": "氛围雷达正在预热。再聊几句，我就能开始一本正经地胡说八道。",
@@ -1362,6 +1371,7 @@ class FunBoxPlugin(Star):
             "menu": "用户想看 FunBox 菜单。请按常用、个人、群聊、空间、不知道玩啥分组，短短介绍玩法。",
             "recommend": "用户想让你推荐一个当前最适合玩的 FunBox 玩法。请基于上下文只推荐 1 个玩法并说明原因。",
             "random_play": "用户想随机抽一个 FunBox 玩法。请给出玩法名、可直接发送的命令和一句理由。",
+            "snapshot": "用户想看最近群聊速写。请把最近聊天压缩成一张短小群聊快照，包含场景、关键词、名场面和一句旁白。",
             "hot_words": "用户想知道最近群聊热词。请基于上下文列出 3~6 个热词，并给一句好笑结论。",
             "scene": "用户想找最近群聊名场面。请从上下文挑一句最有节目效果的话，并给一句短评。",
             "vibe": "用户想知道群聊氛围。请基于上下文生成氛围雷达，包含类型、读数、结论。",
@@ -1457,6 +1467,8 @@ class FunBoxPlugin(Star):
             return ("群聊天气", "/群聊天气", "感叹号能量偏高，适合报一份赛博天气预报。")
         if len(items) >= 25 and len(speakers) >= 3:
             return ("群聊日报", "/群聊日报", "样本够了，适合直接生成一份群聊日报。")
+        if len(items) >= 10:
+            return ("群聊速写", "/群聊速写", "样本刚好够截一张快照，比日报轻一点。")
         if long_msgs >= 6:
             return ("群聊热词", "/群聊热词", "长消息偏多，先抓关键词比较有意思。")
         return ("今日人设", "/今日人设", "气氛比较平稳，先看看 bot 当前人格的今日状态。")
@@ -1487,12 +1499,13 @@ class FunBoxPlugin(Star):
             "3. /群聊天气\n"
             "4. /名场面\n"
             "5. /群聊榜单\n"
-            "6. /梗诞生 这服务器像猫一样不听话\n"
-            "7. /梗词典\n"
-            "8. /梗回收\n"
-            "9. /空间侦探 今天又被生活创飞了\n"
-            "10. /funbox状态\n"
-            "11. /funbox隐私\n"
+            "6. /群聊速写\n"
+            "7. /梗诞生 这服务器像猫一样不听话\n"
+            "8. /梗词典\n"
+            "9. /梗回收\n"
+            "10. /空间侦探 今天又被生活创飞了\n"
+            "11. /funbox状态\n"
+            "12. /funbox隐私\n"
             "自然语言也可以：盒子，来点好玩的"
         )
 
@@ -1505,7 +1518,7 @@ class FunBoxPlugin(Star):
         persona_prompt = await self._current_persona_prompt(event)
 
         lines = ["FunBox 自检："]
-        lines.append(f"插件版本：1.3.0")
+        lines.append(f"插件版本：1.4.0")
         lines.append(f"LLM provider：{'已读取' if provider else '未读取到，LLM 玩法会走模板兜底'}")
         lines.append(f"AstrBot 人格：{'已读取' if persona_prompt else '未读取到，使用中性兜底，不另设新人格'}")
         lines.append(f"最近消息样本：{recent_count}/{self.max_cache_messages}")
@@ -2103,6 +2116,68 @@ class FunBoxPlugin(Star):
     def _scene_candidates(self, items: list[dict], *, top: int = 5) -> list[dict]:
         return sorted(items, key=self._scene_score, reverse=True)[:top]
 
+    async def _build_group_snapshot(self, event: AstrMessageEvent) -> str:
+        items = list(self.recent[self._session_key(event)])[-80:]
+        if len(items) < 4:
+            return "群聊速写启动失败：快照纸还是空的。群里再冒几句话，我就能画一张切片。"
+
+        texts = [item.get("text", "") for item in items if item.get("text")]
+        joined = "\n".join(texts)
+        speakers = {item.get("sender") for item in items if item.get("sender")}
+        laugh = len(re.findall(r"哈|草|笑|乐|绷|hhh|233|蚌", joined, re.I))
+        question = joined.count("?") + joined.count("？")
+        exclaim = joined.count("!") + joined.count("！")
+        hot_words = self._hot_word_counts(items, top=5)
+        hot_text = "、".join(word for word, _ in hot_words) or "暂无明显关键词"
+        scenes = self._scene_candidates(items[-50:], top=3)
+        scene_text = "\n".join(
+            f"{item.get('time')} {item.get('sender')}：{item.get('text')}"
+            for item in scenes
+        ) or "暂无"
+
+        if laugh >= 4:
+            frame = "笑点冒泡"
+            aside = "这段像群聊自己给自己加了弹幕。"
+        elif question >= 4:
+            frame = "集体排障"
+            aside = "空气里有一点问号味，适合先把问题摊平。"
+        elif exclaim >= 4:
+            frame = "能量上扬"
+            aside = "标点已经开始踮脚，群聊热度在升。"
+        elif len(speakers) >= 4:
+            frame = "多人冒泡"
+            aside = "大家像陆续上线的小灯，一盏一盏亮起来。"
+        else:
+            frame = "轻量闲聊"
+            aside = "不算热闹，但已经有一点能被截屏保存的生活噪声。"
+
+        if scenes:
+            lens = f"{scenes[0].get('sender')}：{scenes[0].get('text')}"
+        else:
+            lens = "暂无明显名场面"
+        fallback = (
+            f"群聊速写：{frame}\n"
+            f"画面：最近 {len(texts)} 条，约 {len(speakers)} 人参与\n"
+            f"关键词：{hot_text}\n"
+            f"镜头：{lens}\n"
+            f"旁白：{aside}"
+        )
+
+        return await self._generate_with_context(
+            event,
+            task=(
+                "把最近群聊写成一张“群聊速写/聊天快照”。它不是日报，不要长篇总结；"
+                "像给刚刚这段聊天拍一张轻松、有梗但不攻击人的快照。\n"
+                f"统计：样本 {len(texts)} 条，参与者约 {len(speakers)} 人，"
+                f"笑点 {laugh}，问号 {question}，感叹号 {exclaim}，速写类型 {frame}。\n"
+                f"关键词：{hot_text}\n"
+                f"候选镜头：\n{scene_text}\n"
+                "输出格式：群聊速写：xxx\n画面：xxx\n关键词：xxx\n旁白：xxx"
+            ),
+            fallback=fallback,
+            limit=620,
+        )
+
     async def _build_daily_report(self, event: AstrMessageEvent, *, auto: bool = False) -> str:
         items = list(self.recent[self._session_key(event)])[-120:]
         if len(items) < 5:
@@ -2277,6 +2352,8 @@ class FunBoxPlugin(Star):
             reply = "删除梗为了防误删，请用明确命令：/梗删除 梗名"
         elif intent == "weather":
             reply = await self._weather_text(event)
+        elif intent == "snapshot":
+            reply = await self._build_group_snapshot(event)
         elif intent == "qzone" and not self.enable_space_detective:
             reply = "空间侦探已在 FunBox 配置里关闭。"
         elif intent == "clear_cache":
@@ -2633,6 +2710,11 @@ class FunBoxPlugin(Star):
             fallback=fallback,
         )
         yield event.plain_result(reply)
+        event.stop_event()
+
+    @filter.command("群聊速写", alias={"速写", "群聊快照", "聊天快照"})
+    async def group_snapshot(self, event: AstrMessageEvent):
+        yield event.plain_result(await self._build_group_snapshot(event))
         event.stop_event()
 
     @filter.command("群友小档案", alias={"小档案", "群友档案"})
