@@ -61,3 +61,11 @@ docker restart astrbot
 - Do not rely only on chat context for deployment state.
 - Do not record API keys, proxy subscription URLs, cookies, or other secrets here.
 - The workspace can contain unrelated dirty files; only stage intended FunBox repo changes.
+
+## 2026-06-07 - update guide
+
+### What changed
+- Added `UPDATE_GUIDE.md`.
+- Documented normal GitHub update flow.
+- Documented mihomo proxy update flow, including the observed `7898` mixed proxy port.
+- Documented smoke tests and common troubleshooting steps.
