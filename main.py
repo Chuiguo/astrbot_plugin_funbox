@@ -142,7 +142,7 @@ MENU_CATEGORIES = {
     ),
     "梗档案": (
         ("梗诞生", "把一句话登记成群聊梗。"),
-        ("梗词典", "查看或搜索已登记的梗。"),
+        ("梗词典", "查看已登记的梗卡和回收记录。"),
         ("梗回收", "把旧梗拿出来复用。"),
         ("梗删除", "删除一个不想保留的梗。"),
     ),
@@ -547,7 +547,7 @@ class FunBoxStore:
     "astrbot_plugin_funbox",
     "chuiguo+codex",
     "安全轻量的群聊趣味工具箱：管理面板、梗档案、群聊天气、隐私控制",
-    "2.0.0",
+    "2.1.0",
     "https://github.com/Chuiguo/astrbot_plugin_funbox",
 )
 class FunBoxPlugin(Star):
@@ -781,7 +781,7 @@ class FunBoxPlugin(Star):
         return {
             "ok": True,
             "data": {
-                "version": "2.0.0",
+                "version": "2.1.0",
                 "database": db_stats,
                 "memory": {
                     "sessions": len(self.recent),
@@ -1554,7 +1554,7 @@ class FunBoxPlugin(Star):
         persona_prompt = await self._current_persona_prompt(event)
 
         lines = ["FunBox 自检："]
-        lines.append(f"插件版本：2.0.0")
+        lines.append(f"插件版本：2.1.0")
         lines.append(f"LLM provider：{'已读取' if provider else '未读取到，LLM 玩法会走模板兜底'}")
         lines.append(f"AstrBot 人格：{'已读取' if persona_prompt else '未读取到，使用中性兜底，不另设新人格'}")
         lines.append(f"最近消息样本：{recent_count}/{self.max_cache_messages}")
@@ -1894,6 +1894,89 @@ class FunBoxPlugin(Star):
                 return index, item
         return None, None
 
+    @staticmethod
+    def _parse_meme_datetime(value: object) -> datetime | None:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        for fmt, width in (("%Y-%m-%d %H:%M:%S", 19), ("%Y-%m-%d %H:%M", 16)):
+            try:
+                return datetime.strptime(text[:width], fmt)
+            except ValueError:
+                continue
+        return None
+
+    @staticmethod
+    def _meme_time_text(value: object, default: str = "未知时间") -> str:
+        text = str(value or "").strip()
+        if not text:
+            return default
+        return text[:16] if len(text) >= 16 else text
+
+    def _meme_age_label(self, item: dict) -> str:
+        created = self._parse_meme_datetime(item.get("created_at"))
+        if not created:
+            return "时间未知"
+        days = max(0, (datetime.now() - created).days)
+        if days <= 0:
+            return "今日新梗"
+        if days <= 3:
+            return f"{days}天新梗"
+        if days <= 14:
+            return "近期热梗"
+        if days <= 60:
+            return "月内老梗"
+        return "镇群老梗"
+
+    @staticmethod
+    def _meme_heat_label(use_count: int) -> str:
+        count = max(0, int(use_count or 0))
+        if count <= 0:
+            return "未回收"
+        if count == 1:
+            return "初次回收"
+        if count <= 4:
+            return f"回收{count}次"
+        return f"高频回收{count}次"
+
+    def _meme_lineage_text(self, item: dict) -> str:
+        creator = self._clean(str(item.get("created_by") or "未知群友"), limit=18)
+        created = self._meme_time_text(item.get("created_at"))
+        updated = self._meme_time_text(item.get("updated_at"), "")
+        use_count = int(item.get("use_count", 0) or 0)
+        if updated and use_count > 0:
+            return f"{creator} 收录于 {created}，最近回收 {updated}"
+        return f"{creator} 收录于 {created}"
+
+    def _meme_card_lines(self, item: dict, *, index: int = 0, detail: bool = False) -> list[str]:
+        prefix = f"{index}. " if index else ""
+        name = self._clean(str(item.get("name") or "无名梗"), limit=24)
+        origin = self._clean(str(item.get("origin") or "暂无出处"), limit=80)
+        meaning = self._clean(str(item.get("meaning") or "暂无解释"), limit=90)
+        usage = self._clean(str(item.get("usage") or "适合在类似场景轻轻回收。"), limit=90)
+        heat = self._meme_heat_label(int(item.get("use_count", 0) or 0))
+        age = self._meme_age_label(item)
+
+        lines = [f"{prefix}{name}｜{age}｜{heat}"]
+        if detail:
+            lines.extend(
+                [
+                    f"出处：{origin}",
+                    f"解释：{meaning}",
+                    f"用法：{usage}",
+                    f"档案：{self._meme_lineage_text(item)}",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    f"   解释：{meaning}",
+                    f"   出处：{origin}",
+                    f"   用法：{usage}",
+                ]
+            )
+        return lines
+
     async def _meme_birth_text(self, event: AstrMessageEvent, content: str) -> str:
         content = self._clean(content, limit=160)
         source = "用户指定内容"
@@ -1926,12 +2009,14 @@ class FunBoxPlugin(Star):
         )
         name, meaning, usage = self._parse_meme_reply(reply, fallback_name, fallback_meaning)
         session_key = self._session_key(event)
+        now_text = datetime.now().strftime("%Y-%m-%d %H:%M")
         entry = {
             "name": name,
             "origin": content,
             "meaning": meaning,
             "usage": usage,
-            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "created_at": now_text,
+            "updated_at": now_text,
             "created_by_id": self._sender_id(event),
             "created_by": self._sender_name(event),
             "use_count": 0,
@@ -1948,6 +2033,7 @@ class FunBoxPlugin(Star):
             f"出处：{content}\n"
             f"解释：{meaning}\n"
             f"用法：{usage}\n"
+            f"档案：{self._meme_lineage_text(entry)}\n"
             f"当前梗档案：{len(self.meme_book[session_key])}/{self.max_meme_entries}"
         )
 
@@ -1969,13 +2055,22 @@ class FunBoxPlugin(Star):
             if not items:
                 return f"梗词典里暂时没搜到：{query}"
 
-        lines = [f"梗词典：共 {len(self.meme_book[self._session_key(event)])} 条"]
-        for index, item in enumerate(items[-8:], 1):
-            lines.append(
-                f"{index}. {item.get('name')}：{item.get('meaning')}（回收 {int(item.get('use_count', 0))} 次）\n"
-                f"   出处：{item.get('origin')}"
-            )
-        lines.append("提示：/梗回收 [梗名] 可以把旧梗翻出来。")
+        total = len(self.meme_book[self._session_key(event)])
+        if query:
+            shown = list(reversed(items[-3:]))
+            lines = [f"梗档案｜搜到 {len(items)} 条：{self._clean(query, limit=40)}"]
+            for index, item in enumerate(shown, 1):
+                if index > 1:
+                    lines.append("")
+                lines.extend(self._meme_card_lines(item, index=index, detail=True))
+            if len(items) > len(shown):
+                lines.append(f"还有 {len(items) - len(shown)} 条结果，换个更具体的关键词可以继续捞。")
+        else:
+            shown = list(reversed(items[-5:]))
+            lines = [f"梗词典：共 {total} 条｜最近 {len(shown)} 张梗卡"]
+            for index, item in enumerate(shown, 1):
+                lines.extend(self._meme_card_lines(item, index=index, detail=False))
+        lines.append("提示：/梗词典 关键词 看单张梗卡；/梗回收 梗名 把旧梗翻出来。")
         return "\n".join(lines)
 
     async def _meme_recall_text(self, event: AstrMessageEvent, query: str = "") -> str:
@@ -1983,6 +2078,7 @@ class FunBoxPlugin(Star):
         if not item:
             return "梗档案里暂时没捞到：可能还没登记，或这个梗名太隐身了。"
         item["use_count"] = int(item.get("use_count", 0)) + 1
+        item["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if self._db_ready:
             try:
                 self.store.increment_use_count(int(item.get("id") or 0))
@@ -1990,8 +2086,9 @@ class FunBoxPlugin(Star):
             except Exception as e:
                 logger.debug(f"FunBox 更新梗使用次数失败: {e}")
         fallback = (
-            f"梗回收：{item.get('name')}\n"
+            f"梗回收：{item.get('name')}｜{self._meme_heat_label(int(item.get('use_count', 0) or 0))}\n"
             f"旧出处：{item.get('origin')}\n"
+            f"档案：{self._meme_lineage_text(item)}\n"
             f"这会儿可以这样接：{item.get('usage')}"
         )
         return await self._generate_with_context(
@@ -2002,7 +2099,9 @@ class FunBoxPlugin(Star):
                 f"旧出处：{item.get('origin')}\n"
                 f"解释：{item.get('meaning')}\n"
                 f"用法：{item.get('usage')}\n"
-                "输出格式：梗回收：xxx\n这会儿可以这样接：xxx"
+                f"回收次数：{int(item.get('use_count', 0) or 0)}\n"
+                f"档案：{self._meme_lineage_text(item)}\n"
+                "输出格式：梗回收：xxx\n旧出处：xxx\n这会儿可以这样接：xxx"
             ),
             fallback=fallback,
             limit=520,
