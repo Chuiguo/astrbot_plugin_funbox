@@ -547,7 +547,7 @@ class FunBoxStore:
     "astrbot_plugin_funbox",
     "chuiguo+codex",
     "安全轻量的群聊趣味工具箱：管理面板、梗档案、群聊天气、隐私控制",
-    "1.4.3",
+    "1.4.4",
     "https://github.com/Chuiguo/astrbot_plugin_funbox",
 )
 class FunBoxPlugin(Star):
@@ -781,7 +781,7 @@ class FunBoxPlugin(Star):
         return {
             "ok": True,
             "data": {
-                    "version": "1.4.3",
+                "version": "1.4.4",
                 "database": db_stats,
                 "memory": {
                     "sessions": len(self.recent),
@@ -1389,7 +1389,7 @@ class FunBoxPlugin(Star):
             "persona": "今日状态：已按 AstrBot 当前人格待机\n一句描述：不额外换皮，只把当前角色发挥得更顺手。",
             "abstract": "抽象指数：42/100\n结论：有一点小火花，但还没到群聊博物馆级别。",
             "profile": "群友小档案还在生成中：样本太少，再多聊几句我就能端出赛博画像。",
-            "daily_report": "群聊日报启动失败：今天的样本还不够，群友再冒泡几句我就能写日报。",
+            "daily_report": "群聊日报还在等素材：今天的样本还不够，群友再冒泡几句我就能写日报。",
             "weather": "群聊天气：样本不足\n天气：刚开机的小晴天\n建议：再聊几句，我就能报局部发癫概率。",
             "qzone": "空间侦探启动：这条动态看起来有点故事，但证据不足，建议补一句原文让我锐评。",
         }
@@ -1554,7 +1554,7 @@ class FunBoxPlugin(Star):
         persona_prompt = await self._current_persona_prompt(event)
 
         lines = ["FunBox 自检："]
-        lines.append(f"插件版本：1.4.3")
+        lines.append(f"插件版本：1.4.4")
         lines.append(f"LLM provider：{'已读取' if provider else '未读取到，LLM 玩法会走模板兜底'}")
         lines.append(f"AstrBot 人格：{'已读取' if persona_prompt else '未读取到，使用中性兜底，不另设新人格'}")
         lines.append(f"最近消息样本：{recent_count}/{self.max_cache_messages}")
@@ -1900,7 +1900,7 @@ class FunBoxPlugin(Star):
         if not content:
             recent = list(self.recent[self._session_key(event)])[-50:]
             if not recent:
-                return "梗诞生失败：最近没有可登记的群聊样本。用法：/梗诞生 这服务器像猫一样不听话"
+                return "梗诞生还缺一句出处：最近没有可登记的群聊样本。用法：/梗诞生 这服务器像猫一样不听话"
             item = max(recent, key=self._scene_score)
             content = self._clean(item.get("text", ""), limit=160)
             source = f"{item.get('time')} {item.get('sender')}"
@@ -1981,7 +1981,7 @@ class FunBoxPlugin(Star):
     async def _meme_recall_text(self, event: AstrMessageEvent, query: str = "") -> str:
         _, item = self._find_meme(event, query)
         if not item:
-            return "梗回收失败：梗档案还是空的，或没找到这个梗。"
+            return "梗档案里暂时没捞到：可能还没登记，或这个梗名太隐身了。"
         item["use_count"] = int(item.get("use_count", 0)) + 1
         if self._db_ready:
             try:
@@ -2248,7 +2248,7 @@ class FunBoxPlugin(Star):
     async def _build_daily_report(self, event: AstrMessageEvent, *, auto: bool = False) -> str:
         items = list(self.recent[self._session_key(event)])[-120:]
         if len(items) < 5:
-            return "群聊日报启动失败：今天的样本还不够，群友再冒泡几句我就能写日报。"
+            return "群聊日报还在等素材：今天的样本还不够，群友再冒泡几句我就能写日报。"
 
         texts = [item.get("text", "") for item in items if item.get("text")]
         joined = "\n".join(texts)
@@ -2680,7 +2680,7 @@ class FunBoxPlugin(Star):
         items = list(self.recent[self._session_key(event)])
         if len(items) < 5:
             yield event.plain_result(
-                "氛围雷达启动失败：我刚开机，瓜还没攒够。再聊几句我就能开始胡说八道。"
+                "氛围雷达正在预热：我刚开机，瓜还没攒够。再聊几句我就能开始胡说八道。"
             )
             event.stop_event()
             return
@@ -2734,7 +2734,7 @@ class FunBoxPlugin(Star):
     async def hot_words(self, event: AstrMessageEvent):
         items = list(self.recent[self._session_key(event)])
         if len(items) < 5:
-            yield event.plain_result("热词雷达启动失败：样本太少，再聊几句我就能抓关键词。")
+            yield event.plain_result("热词雷达还在等词：样本太少，再聊几句我就能抓关键词。")
             event.stop_event()
             return
 
@@ -2842,7 +2842,7 @@ class FunBoxPlugin(Star):
             source = "最近群聊上下文"
 
         if not text:
-            yield event.plain_result("空间侦探启动失败：没看到说说原文。用法：/空间侦探 今天又被生活创飞了")
+            yield event.plain_result("空间侦探还缺案发现场：没看到说说原文。用法：/空间侦探 今天又被生活创飞了")
             event.stop_event()
             return
 
