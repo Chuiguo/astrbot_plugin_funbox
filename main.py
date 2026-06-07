@@ -102,25 +102,26 @@ NATURAL_NAMES = ("funbox", "盒子", "小盒", "小盒子", "趣味盒")
 
 MENU_CATEGORIES = {
     "常用": (
+        ("玩点啥", "不知道从哪开始时，让 FunBox 只推荐一个。"),
+        ("群聊速写", "把刚刚的聊天截成一张四行小画面。"),
         ("氛围雷达", "看最近群聊气氛。"),
         ("名场面", "捞一句最近最有节目效果的话。"),
-        ("今日人设", "按 AstrBot 当前人格生成今日状态。"),
-        ("赛博塔罗", "抽一张赛博运势卡。"),
     ),
     "个人": (
+        ("今日人设", "按 AstrBot 当前人格生成今日状态。"),
+        ("赛博塔罗", "抽一张赛博运势卡。"),
         ("群友小档案", "根据最近发言生成轻量聊天画像。"),
         ("今日运势", "抽今天的轻量运势。"),
         ("抽象指数", "测一句话或本人近期发言的抽象程度。"),
     ),
     "群聊": (
-        ("群聊天气", "把最近群聊气氛报成赛博天气。"),
-        ("梗词典", "查看本群临时梗档案。"),
-        ("梗回收", "把旧梗翻出来接到当前上下文里。"),
-        ("群聊热词", "统计最近反复出现的关键词。"),
         ("群聊速写", "把刚刚的聊天截成一张四行小画面。"),
+        ("群聊天气", "把最近群聊气氛报成赛博天气。"),
+        ("氛围雷达", "用读数吐槽群聊空气。"),
+        ("名场面", "捞一句最近最有节目效果的话。"),
+        ("群聊热词", "统计最近反复出现的关键词。"),
         ("群聊日报", "总结最近热词、名场面和气质。"),
         ("群聊榜单", "抽象王、梗王、问号王轻量排行。"),
-        ("氛围雷达", "用读数吐槽群聊空气。"),
     ),
     "空间": (
         ("空间侦探", "分析说说/空间动态，安全锐评。"),
@@ -144,6 +145,14 @@ MENU_CATEGORIES = {
         ("funbox忘记我", "删除当前用户在 FunBox 里的最近样本。"),
     ),
 }
+
+MENU_OVERVIEW = (
+    ("精选", "/玩点啥、/群聊速写、/氛围雷达、/名场面"),
+    ("群聊", "/群聊速写、/群聊天气、/群聊日报"),
+    ("梗档案", "/梗诞生、/梗词典、/梗回收"),
+    ("个人", "/今日人设、/赛博塔罗、/群友小档案"),
+    ("维护", "/funbox自检、/funbox隐私"),
+)
 
 PLAY_EXAMPLES = (
     ("氛围雷达", "/氛围雷达", "最近聊天有点空气流动，适合扫一下气氛。"),
@@ -528,7 +537,7 @@ class FunBoxStore:
     "astrbot_plugin_funbox",
     "chuiguo+codex",
     "安全轻量的群聊趣味工具箱：管理面板、梗档案、群聊天气、隐私控制",
-    "1.4.1",
+    "1.4.2",
     "https://github.com/Chuiguo/astrbot_plugin_funbox",
 )
 class FunBoxPlugin(Star):
@@ -762,7 +771,7 @@ class FunBoxPlugin(Star):
         return {
             "ok": True,
             "data": {
-                    "version": "1.4.1",
+                    "version": "1.4.2",
                 "database": db_stats,
                 "memory": {
                     "sessions": len(self.recent),
@@ -1368,7 +1377,7 @@ class FunBoxPlugin(Star):
             "meme_dictionary": "用户想看梗词典。请提醒可用 /梗词典。",
             "meme_recall": "用户想回收旧梗。请提醒可用 /梗回收。",
             "meme_delete": "用户想删除梗。请提醒可用 /梗删除 梗名。",
-            "menu": "用户想看 FunBox 菜单。请按常用、个人、群聊、空间、不知道玩啥分组，短短介绍玩法。",
+            "menu": "用户想看 FunBox 菜单。请给精选入口，不要铺满所有命令；提醒可用 /趣味帮助 分类 查看完整分类。",
             "recommend": "用户想让你推荐一个当前最适合玩的 FunBox 玩法。请基于上下文只推荐 1 个玩法并说明原因。",
             "random_play": "用户想随机抽一个 FunBox 玩法。请给出玩法名、可直接发送的命令和一句理由。",
             "snapshot": "用户想看最近群聊速写。请把最近聊天写成一张短小切片：标题、画面、镜头、旁白，不要写成日报或总结。",
@@ -1430,19 +1439,17 @@ class FunBoxPlugin(Star):
         if raw:
             return (
                 f"我没找到“{raw}”这个分类。\n"
-                "可用分类：常用、个人、群聊、空间、不知道玩啥。\n"
+                "可用分类：常用、群聊、个人、梗档案、空间、维护。\n"
                 "例：/趣味帮助 群聊"
             )
 
         lines = ["FunBox 菜单："]
-        for name, entries in MENU_CATEGORIES.items():
-            command_names = "、".join(f"/{command}" for command, _ in entries)
-            lines.append(f"{name}：{command_names}")
+        lines.extend(f"{name}：{commands}" for name, commands in MENU_OVERVIEW)
         lines.extend(
             (
                 "",
-                "记不住就用：/玩点啥 或 /随机玩法",
-                "细看分类：/趣味帮助 常用、/趣味帮助 个人、/趣味帮助 群聊、/趣味帮助 空间、/趣味帮助 维护",
+                "想少想：/玩点啥",
+                "想完整：/趣味帮助 群聊、/趣味帮助 梗档案、/趣味帮助 维护",
             )
         )
         return "\n".join(lines)
@@ -1493,20 +1500,14 @@ class FunBoxPlugin(Star):
 
     def _examples_text(self) -> str:
         return (
-            "FunBox 快速测试示例：\n"
-            "1. /趣味菜单\n"
+            "FunBox 精选测试：\n"
+            "1. /funbox自检\n"
             "2. /玩点啥\n"
-            "3. /群聊天气\n"
-            "4. /名场面\n"
-            "5. /群聊榜单\n"
-            "6. /群聊速写\n"
-            "7. /梗诞生 这服务器像猫一样不听话\n"
-            "8. /梗词典\n"
-            "9. /梗回收\n"
-            "10. /空间侦探 今天又被生活创飞了\n"
-            "11. /funbox状态\n"
-            "12. /funbox隐私\n"
-            "自然语言也可以：盒子，来点好玩的"
+            "3. /群聊速写\n"
+            "4. /氛围雷达\n"
+            "5. /梗诞生 这服务器像猫一样不听话\n"
+            "6. 盒子，刚刚群里聊了啥？\n"
+            "更多分类：/趣味帮助 群聊"
         )
 
     async def _self_check_text(self, event: AstrMessageEvent) -> str:
@@ -1518,7 +1519,7 @@ class FunBoxPlugin(Star):
         persona_prompt = await self._current_persona_prompt(event)
 
         lines = ["FunBox 自检："]
-        lines.append(f"插件版本：1.4.1")
+        lines.append(f"插件版本：1.4.2")
         lines.append(f"LLM provider：{'已读取' if provider else '未读取到，LLM 玩法会走模板兜底'}")
         lines.append(f"AstrBot 人格：{'已读取' if persona_prompt else '未读取到，使用中性兜底，不另设新人格'}")
         lines.append(f"最近消息样本：{recent_count}/{self.max_cache_messages}")

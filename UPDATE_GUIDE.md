@@ -29,7 +29,7 @@ docker restart astrbot
 git log -5 --oneline
 ```
 
-如果本轮是 `v1.4.1 群聊速写精品化`，最近提交里应该能看到对应的 `Polish group snapshot` 提交。
+最近提交里应该能看到本轮修改对应的提交信息；如果没有，说明还没有拉到最新远端代码。
 
 ## GitHub 连不上时走 mihomo 代理
 
